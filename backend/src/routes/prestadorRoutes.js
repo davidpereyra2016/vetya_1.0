@@ -51,6 +51,104 @@ router.get('/emergencias', async (req, res) => {
   }
 });
 
+// Obtener prestadores disponibles para emergencias con ubicación en tiempo real
+router.get('/emergencias/ubicacion', async (req, res) => {
+  try {
+    // Obtener las coordenadas del cliente (si se proporcionan)
+    const { lat, lng } = req.query;
+    
+    // Buscar prestadores disponibles para emergencias
+    const prestadores = await Prestador.find({
+      disponibleEmergencias: true,
+      activo: true,
+      'ubicacionActual.coordenadas': { $exists: true } // Solo los que tienen ubicación actual
+    }).select(
+      'nombre tipo especialidades imagen direccion rating disponibleEmergencias precioEmergencia radio ubicacionActual'
+    );
+    
+    // Si no hay prestadores disponibles, devolver array vacío
+    if (!prestadores || prestadores.length === 0) {
+      return res.json([]);
+    }
+    
+    // Si se proporcionaron coordenadas del cliente, calcular distancia y tiempo estimado
+    let resultado = prestadores;
+    if (lat && lng) {
+      const clientLocation = {
+        lat: parseFloat(lat),
+        lng: parseFloat(lng)
+      };
+      
+      // Calcular distancia y tiempo estimado para cada prestador
+      resultado = prestadores.map(prestador => {
+        const prestadorObj = prestador.toObject();
+        
+        if (prestadorObj.ubicacionActual && prestadorObj.ubicacionActual.coordenadas) {
+          // Calcular distancia en km usando la fórmula de Haversine
+          const distance = calcularDistancia(
+            clientLocation.lat, 
+            clientLocation.lng, 
+            prestadorObj.ubicacionActual.coordenadas.lat, 
+            prestadorObj.ubicacionActual.coordenadas.lng
+          );
+          
+          // Calcular tiempo estimado (asumiendo velocidad promedio de 30 km/h en ciudad)
+          // Convertir a minutos y redondear
+          const tiempoEstimadoMinutos = Math.round(distance / 30 * 60);
+          
+          // Añadir información de distancia y tiempo estimado
+          prestadorObj.distancia = {
+            valor: distance,
+            texto: `${distance.toFixed(1)} km`
+          };
+          
+          prestadorObj.tiempoEstimado = {
+            valor: tiempoEstimadoMinutos,
+            texto: tiempoEstimadoMinutos < 60 
+              ? `${tiempoEstimadoMinutos} min` 
+              : `${Math.floor(tiempoEstimadoMinutos/60)} h ${tiempoEstimadoMinutos % 60} min`
+          };
+        }
+        
+        return prestadorObj;
+      });
+      
+      // Ordenar por distancia (más cercanos primero)
+      resultado.sort((a, b) => {
+        const distanciaA = a.distancia?.valor || Infinity;
+        const distanciaB = b.distancia?.valor || Infinity;
+        return distanciaA - distanciaB;
+      });
+    }
+    
+    res.json(resultado);
+  } catch (error) {
+    console.error('Error al obtener prestadores con ubicación:', error);
+    res.status(500).json({ message: 'Error al obtener los prestadores con ubicación' });
+  }
+});
+
+// Función auxiliar para calcular distancia entre dos puntos usando Haversine
+function calcularDistancia(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Radio de la Tierra en km
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const d = R * c; // Distancia en km
+  
+  return Math.round(d * 10) / 10; // Redondear a 1 decimal
+}
+
+function toRad(value) {
+  return value * Math.PI / 180;
+}
+
 // Obtener prestadores cercanos por coordenadas
 router.get('/cercanos', async (req, res) => {
   try {
@@ -133,6 +231,78 @@ router.post('/', protectRoute, async (req, res) => {
   }
 });
 
+// Actualizar ubicación del prestador en tiempo real
+router.patch('/:id/ubicacion', protectRoute, async (req, res) => {
+  try {
+    const { lat, lng } = req.body;
+    
+    // Validar que las coordenadas sean números válidos
+    if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Se requieren coordenadas válidas (lat, lng)' 
+      });
+    }
+    
+    // Buscar prestador
+    const prestador = await Prestador.findById(req.params.id);
+    
+    if (!prestador) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Prestador no encontrado' 
+      });
+    }
+    
+    // Verificar si el usuario autenticado es dueño del prestador
+    if (prestador.usuario.toString() !== req.user._id.toString()) {
+      return res.status(401).json({ 
+        success: false, 
+        message: 'No autorizado para modificar este prestador' 
+      });
+    }
+    
+    // Verificar que el prestador sea veterinario y esté disponible para emergencias
+    if (prestador.tipo !== 'Veterinario') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Solo los veterinarios pueden actualizar su ubicación para emergencias' 
+      });
+    }
+    
+    if (!prestador.disponibleEmergencias) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'El prestador debe estar disponible para emergencias para actualizar su ubicación' 
+      });
+    }
+    
+    // Actualizar la ubicación actual
+    prestador.ubicacionActual = {
+      coordenadas: {
+        lat: parseFloat(lat),
+        lng: parseFloat(lng)
+      },
+      ultimaActualizacion: new Date()
+    };
+    
+    await prestador.save();
+    
+    res.json({ 
+      success: true, 
+      message: 'Ubicación actualizada correctamente',
+      ubicacion: prestador.ubicacionActual 
+    });
+  } catch (error) {
+    console.error('Error al actualizar ubicación del prestador:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error al actualizar la ubicación', 
+      error: error.message 
+    });
+  }
+});
+
 // Actualizar precio de emergencia del prestador
 router.patch('/:id/precio-emergencia', protectRoute, async (req, res) => {
   try {
@@ -167,6 +337,11 @@ router.patch('/:id/precio-emergencia', protectRoute, async (req, res) => {
     
     if (disponibleEmergencias !== undefined) {
       prestador.disponibleEmergencias = disponibleEmergencias;
+      
+      // Si el prestador está desactivando su disponibilidad, limpiar ubicación actual
+      if (!disponibleEmergencias && prestador.ubicacionActual) {
+        prestador.ubicacionActual = undefined;
+      }
     }
     
     await prestador.save();

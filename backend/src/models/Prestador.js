@@ -115,7 +115,17 @@ const prestadorSchema = new Schema({
   },
   radio: {
     type: Number, // Radio de cobertura en kilómetros
-    default: 5
+    default: 1 // Cambiado a 1 km para proteger la privacidad del prestador
+  },
+  ubicacionActual: {
+    coordenadas: {
+      lat: Number,
+      lng: Number
+    },
+    ultimaActualizacion: {
+      type: Date,
+      default: Date.now
+    }
   },
   activo: {
     type: Boolean,
