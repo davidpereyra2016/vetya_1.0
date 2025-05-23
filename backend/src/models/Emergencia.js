@@ -18,8 +18,7 @@ const emergenciaSchema = new mongoose.Schema({
   },
   veterinario: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Veterinario'
-    // No es requerido inicialmente ya que puede asignarse después
+    ref: 'Prestador'
   },
   descripcion: {
     type: String,

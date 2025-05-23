@@ -1,7 +1,7 @@
 import express from "express";
 import Cita from "../models/Cita.js";
 import Mascota from "../models/Mascota.js";
-import Veterinario from "../models/Veterinario.js";
+import Prestador from "../models/Prestador.js";
 import Servicio from "../models/Servicio.js";
 import protectRoute from "../middleware/auth.middleware.js";
 

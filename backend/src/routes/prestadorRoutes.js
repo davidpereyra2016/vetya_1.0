@@ -172,6 +172,15 @@ router.get('/emergencias/ubicacion', async (req, res) => {
     // Obtener las coordenadas del cliente (si se proporcionan)
     const { lat, lng } = req.query;
     
+    // Log detallado de las coordenadas recibidas del cliente
+    console.log('=== COORDENADAS DEL CLIENTE RECIBIDAS EN BACKEND ===');
+    console.log(`Latitud recibida: ${lat || 'NO RECIBIDA'}`);
+    console.log(`Longitud recibida: ${lng || 'NO RECIBIDA'}`);
+    console.log(`IP del cliente: ${req.ip || req.connection.remoteAddress || 'desconocida'}`);
+    console.log(`Timestamp de recepción: ${new Date().toISOString()}`);
+    console.log(`Ruta solicitada: ${req.originalUrl}`);
+    console.log('=================================================');
+    
     // Buscar prestadores disponibles para emergencias
     const prestadores = await Prestador.find({
       disponibleEmergencias: true,
@@ -180,6 +189,8 @@ router.get('/emergencias/ubicacion', async (req, res) => {
     }).select(
       'nombre tipo especialidades imagen direccion rating disponibleEmergencias precioEmergencia radio ubicacionActual'
     );
+    
+    console.log(`Se encontraron ${prestadores.length} prestadores disponibles con ubicación actual`);
     
     // Si no hay prestadores disponibles, devolver array vacío
     if (!prestadores || prestadores.length === 0) {

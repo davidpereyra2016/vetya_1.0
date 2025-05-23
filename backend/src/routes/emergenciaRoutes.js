@@ -1,7 +1,7 @@
 import express from "express";
 import Emergencia from "../models/Emergencia.js";
 import Mascota from "../models/Mascota.js";
-import Veterinario from "../models/Veterinario.js";
+import Prestador from "../models/Prestador.js";
 import cloudinary from "../lib/cloudinary.js";
 import protectRoute from "../middleware/auth.middleware.js";
 
@@ -244,10 +244,10 @@ router.patch("/:id/asignar-veterinario", protectRoute, async (req, res) => {
       return res.status(404).json({ message: "Emergencia no encontrada" });
     }
     
-    // Verificar que el veterinario exista
-    const veterinario = await Veterinario.findById(veterinarioId);
-    if (!veterinario) {
-      return res.status(404).json({ message: "Veterinario no encontrado" });
+    // Verificar que el prestador (veterinario) exista
+    const veterinario = await Prestador.findById(veterinarioId);
+    if (!veterinario || veterinario.tipo !== "Veterinario") {
+      return res.status(404).json({ message: "Prestador de tipo Veterinario no encontrado" });
     }
     
     // Solo se puede asignar a emergencias solicitadas
@@ -269,6 +269,79 @@ router.patch("/:id/asignar-veterinario", protectRoute, async (req, res) => {
   } catch (error) {
     console.log(error);
     res.status(500).json({ message: "Error al asignar veterinario a la emergencia" });
+  }
+});
+
+// Función auxiliar para calcular distancia entre dos puntos geográficos
+function calcularDistancia(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Radio de la Tierra en km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2); 
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+  const d = R * c; // Distancia en km
+  return d;
+}
+
+// Obtener actualización de ubicación del veterinario asignado a una emergencia
+router.get("/:id/ubicacion-veterinario", protectRoute, async (req, res) => {
+  try {
+    const emergencia = await Emergencia.findById(req.params.id);
+    
+    if (!emergencia) {
+      return res.status(404).json({ message: "Emergencia no encontrada" });
+    }
+    
+    // Verificar si el usuario actual es el propietario de la emergencia
+    if (emergencia.usuario.toString() !== req.user._id.toString()) {
+      return res.status(401).json({ message: "No autorizado para ver esta información" });
+    }
+    
+    // Verificar si hay un veterinario asignado
+    if (!emergencia.veterinario) {
+      return res.status(400).json({ message: "No hay veterinario asignado a esta emergencia" });
+    }
+    
+    // Buscar el prestador (veterinario) para obtener su ubicación actual
+    const veterinario = await Prestador.findById(emergencia.veterinario);
+    
+    if (!veterinario || !veterinario.ubicacionActual || !veterinario.ubicacionActual.coordenadas) {
+      return res.status(404).json({ message: "No se encontró la ubicación del veterinario" });
+    }
+    
+    // Coordenadas del cliente y veterinario
+    const clienteLat = emergencia.ubicacion.coordenadas.lat;
+    const clienteLng = emergencia.ubicacion.coordenadas.lng;
+    const vetLat = veterinario.ubicacionActual.coordenadas[1]; // Latitud
+    const vetLng = veterinario.ubicacionActual.coordenadas[0]; // Longitud
+    
+    // Calcular distancia real (usando la fórmula haversine)
+    const distanciaReal = calcularDistancia(clienteLat, clienteLng, vetLat, vetLng);
+    
+    // Aplicar radio de privacidad (mínimo 1km)
+    const distanciaAjustada = Math.max(1.0, distanciaReal);
+    
+    // Calcular tiempo estimado (asumiendo 30km/h en entorno urbano)
+    const tiempoEstimadoMin = Math.ceil(distanciaAjustada * 2); // 2 min por km
+    
+    res.status(200).json({
+      distancia: {
+        valor: distanciaAjustada,
+        texto: `${distanciaAjustada.toFixed(1)} km`
+      },
+      tiempoEstimado: {
+        valor: tiempoEstimadoMin,
+        texto: `${tiempoEstimadoMin} min`
+      },
+      ultimaActualizacion: veterinario.ubicacionActual.ultimaActualizacion
+    });
+    
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Error al obtener la ubicación del veterinario" });
   }
 });
 

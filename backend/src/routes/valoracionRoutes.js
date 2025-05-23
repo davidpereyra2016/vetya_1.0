@@ -1,6 +1,6 @@
 import express from "express";
 import Valoracion from "../models/Valoracion.js";
-import Veterinario from "../models/Veterinario.js";
+import Prestador from "../models/Prestador.js";
 import Cita from "../models/Cita.js";
 import Emergencia from "../models/Emergencia.js";
 import protectRoute from "../middleware/auth.middleware.js";
