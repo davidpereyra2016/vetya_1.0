@@ -2,7 +2,37 @@ import express from 'express';
 const router = express.Router();
 import Prestador from '../models/Prestador.js';
 import Servicio from '../models/Servicio.js';
-import protectRoute from '../middleware/auth.middleware.js';
+import User from '../models/User.js';
+import { protectRoute, checkRole } from '../middleware/auth.middleware.js';
+
+/**
+ * Calcula la distancia entre dos puntos geográficos usando la fórmula de Haversine
+ * @param {number} lat1 - Latitud del punto 1
+ * @param {number} lon1 - Longitud del punto 1
+ * @param {number} lat2 - Latitud del punto 2
+ * @param {number} lon2 - Longitud del punto 2
+ * @returns {number} Distancia en kilómetros
+ */
+function calcularDistancia(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Radio de la Tierra en km
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c; // Distancia en km
+}
+
+/**
+ * Convierte grados a radianes
+ * @param {number} value - Valor en grados
+ * @returns {number} Valor en radianes
+ */
+function toRad(value) {
+  return value * Math.PI / 180;
+}
 
 // Obtener todos los prestadores
 router.get('/', async (req, res) => {
@@ -46,8 +76,93 @@ router.get('/emergencias', async (req, res) => {
     
     res.json(prestadores);
   } catch (error) {
-    console.log(error);
+    console.error(error);
     res.status(500).json({ message: 'Error al obtener los prestadores para emergencias' });
+  }
+});
+
+// Obtener prestadores disponibles para emergencias con cálculo de distancia
+router.get('/emergencias/disponibles', protectRoute, async (req, res) => {
+  try {
+    let { clientLat, clientLng } = req.query;
+    
+    // Si el cliente no proporciona ubicación, intentar obtenerla de su perfil
+    if (!clientLat || !clientLng) {
+      // Intentar obtener la ubicación del usuario autenticado
+      if (req.user && req.user._id) {
+        const client = await User.findById(req.user._id);
+        if (client && client.ubicacionActual && client.ubicacionActual.coordinates) {
+          clientLat = client.ubicacionActual.coordinates.lat;
+          clientLng = client.ubicacionActual.coordinates.lng;
+          console.log('Usando ubicación guardada del cliente:', { clientLat, clientLng });
+        }
+      }
+      
+      // Si aún no tenemos ubicación, retornar error
+      if (!clientLat || !clientLng) {
+        return res.status(400).json({ 
+          message: 'Se requiere la ubicación del cliente. Por favor, activa tu GPS o ingresa una ubicación manual.'
+        });
+      }
+    }
+    
+    // Convertir a números
+    clientLat = parseFloat(clientLat);
+    clientLng = parseFloat(clientLng);
+    
+    // Buscar veterinarios disponibles
+    const prestadores = await Prestador.find({
+      disponibleEmergencias: true,
+      activo: true
+    }).populate('usuario', 'email username');
+    
+    // Calcular distancias y tiempos
+    const prestadoresConDistancia = prestadores.map(prestador => {
+      // Usar ubicación actual o fija del prestador
+      const prestadorLat = prestador.ubicacionActual?.coordenadas?.lat || prestador.direccion?.coordenadas?.lat;
+      const prestadorLng = prestador.ubicacionActual?.coordenadas?.lng || prestador.direccion?.coordenadas?.lng;
+      
+      // Si no hay coordenadas, asignar una distancia muy grande
+      if (!prestadorLat || !prestadorLng) {
+        return {
+          ...prestador.toObject(),
+          distancia: 9999,
+          distanciaTexto: 'Desconocida',
+          tiempoEstimado: 'Desconocido'
+        };
+      }
+      
+      // Calcular distancia usando Haversine
+      const distancia = calcularDistancia(
+        clientLat, clientLng, 
+        prestadorLat, prestadorLng
+      );
+      
+      // Calcular tiempo estimado (asumiendo 30 km/h promedio en ciudad)
+      const tiempoEstimadoMinutos = Math.ceil(distancia / 30 * 60);
+      
+      return {
+        ...prestador.toObject(),
+        distancia: distancia, // valor numérico para ordenar
+        distanciaTexto: `${distancia.toFixed(1)} km`,
+        tiempoEstimado: tiempoEstimadoMinutos,
+        tiempoEstimadoTexto: tiempoEstimadoMinutos < 60 ? 
+          `${tiempoEstimadoMinutos} min` : 
+          `${Math.floor(tiempoEstimadoMinutos/60)} h ${tiempoEstimadoMinutos%60} min`
+      };
+    });
+    
+    // Ordenar por cercanía
+    prestadoresConDistancia.sort((a, b) => a.distancia - b.distancia);
+    
+    res.status(200).json({
+      success: true,
+      count: prestadoresConDistancia.length,
+      data: prestadoresConDistancia
+    });
+  } catch (error) {
+    console.error('Error al obtener prestadores con distancia:', error);
+    res.status(500).json({ message: 'Error al obtener prestadores disponibles' });
   }
 });
 
@@ -128,26 +243,7 @@ router.get('/emergencias/ubicacion', async (req, res) => {
   }
 });
 
-// Función auxiliar para calcular distancia entre dos puntos usando Haversine
-function calcularDistancia(lat1, lon1, lat2, lon2) {
-  const R = 6371; // Radio de la Tierra en km
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * 
-    Math.sin(dLon/2) * Math.sin(dLon/2);
-  
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  const d = R * c; // Distancia en km
-  
-  return Math.round(d * 10) / 10; // Redondear a 1 decimal
-}
-
-function toRad(value) {
-  return value * Math.PI / 180;
-}
+// Nota: Usamos la función calcularDistancia definida al inicio del archivo
 
 // Obtener prestadores cercanos por coordenadas
 router.get('/cercanos', async (req, res) => {

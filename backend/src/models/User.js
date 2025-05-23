@@ -20,6 +20,23 @@ const userSchema = new mongoose.Schema({
     profilePicture:{
         type: String,
         default: ""
+    },
+    // Campo de rol para diferenciar tipos de usuarios
+    role: {
+        type: String,
+        enum: ['client', 'provider', 'admin'],
+        default: 'client'
+    },
+    // Ubicación actual del cliente (para emergencias)
+    ubicacionActual: {
+        coordinates: {
+            lat: Number,
+            lng: Number
+        },
+        lastUpdated: {
+            type: Date,
+            default: Date.now
+        }
     }
 }, {
     timestamps: true
