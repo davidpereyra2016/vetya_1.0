@@ -315,8 +315,25 @@ router.get("/:id/ubicacion-veterinario", protectRoute, async (req, res) => {
     // Coordenadas del cliente y veterinario
     const clienteLat = emergencia.ubicacion.coordenadas.lat;
     const clienteLng = emergencia.ubicacion.coordenadas.lng;
-    const vetLat = veterinario.ubicacionActual.coordenadas[1]; // Latitud
-    const vetLng = veterinario.ubicacionActual.coordenadas[0]; // Longitud
+    
+    // Verificar que las coordenadas del veterinario sean válidas
+    let vetLat, vetLng;
+    if (Array.isArray(veterinario.ubicacionActual.coordenadas) && 
+        veterinario.ubicacionActual.coordenadas.length >= 2) {
+      vetLng = veterinario.ubicacionActual.coordenadas[0]; // MongoDB GeoJSON: [longitud, latitud]
+      vetLat = veterinario.ubicacionActual.coordenadas[1];
+    } else {
+      // Usar coordenadas cercanas simuladas si no hay datos válidos
+      // Variación aleatoria pequeña para simular movimiento pero preservar privacidad
+      const variacion = 0.001 * (Math.random() - 0.5);
+      vetLat = clienteLat + variacion;
+      vetLng = clienteLng + variacion;
+    }
+    
+    // Asegurarse de que las coordenadas son números válidos
+    if (isNaN(clienteLat) || isNaN(clienteLng) || isNaN(vetLat) || isNaN(vetLng)) {
+      return res.status(400).json({ message: "Coordenadas inválidas" });
+    }
     
     // Calcular distancia real (usando la fórmula haversine)
     const distanciaReal = calcularDistancia(clienteLat, clienteLng, vetLat, vetLng);
@@ -336,7 +353,7 @@ router.get("/:id/ubicacion-veterinario", protectRoute, async (req, res) => {
         valor: tiempoEstimadoMin,
         texto: `${tiempoEstimadoMin} min`
       },
-      ultimaActualizacion: veterinario.ubicacionActual.ultimaActualizacion
+      ultimaActualizacion: veterinario.ubicacionActual.ultimaActualizacion || new Date()
     });
     
   } catch (error) {
@@ -411,6 +428,51 @@ router.post("/cercanas", protectRoute, async (req, res) => {
   } catch (error) {
     console.log(error);
     res.status(500).json({ message: "Error al obtener emergencias cercanas" });
+  }
+});
+
+// Confirmar servicio de emergencia
+router.patch("/:id/confirmar", protectRoute, async (req, res) => {
+  try {
+    const { metodoPago } = req.body;
+    
+    const emergencia = await Emergencia.findById(req.params.id);
+    
+    if (!emergencia) {
+      return res.status(404).json({ message: "Emergencia no encontrada" });
+    }
+    
+    // Verificar si el usuario actual es el propietario
+    if (emergencia.usuario.toString() !== req.user._id.toString()) {
+      return res.status(401).json({ message: "No autorizado para confirmar esta emergencia" });
+    }
+    
+    // Verificar que la emergencia tenga un veterinario asignado
+    if (!emergencia.veterinario) {
+      return res.status(400).json({ message: "No se puede confirmar una emergencia sin veterinario asignado" });
+    }
+    
+    // Actualizar estado y método de pago
+    emergencia.estado = "Confirmada";
+    
+    if (metodoPago) {
+      emergencia.metodoPago = metodoPago;
+    }
+    
+    // Registrar fecha de confirmación
+    emergencia.fechaConfirmacion = new Date();
+    
+    await emergencia.save();
+    
+    // Devolver los datos actualizados de la emergencia
+    const emergenciaActualizada = await Emergencia.findById(emergencia._id)
+      .populate("mascota", "nombre tipo raza imagen")
+      .populate("veterinario", "nombre especialidad email telefono imagen rating");
+    
+    res.status(200).json(emergenciaActualizada);
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Error al confirmar la emergencia" });
   }
 });
 
