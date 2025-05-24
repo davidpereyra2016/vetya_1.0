@@ -36,7 +36,7 @@ const emergenciaSchema = new mongoose.Schema({
   },
   estado: {
     type: String,
-    enum: ['Solicitada', 'Asignada', 'En camino', 'Atendida', 'Cancelada'],
+    enum: ['Solicitada', 'Asignada', 'Confirmada', 'En camino', 'Atendida', 'Cancelada'],
     default: 'Solicitada'
   },
   ubicacion: {

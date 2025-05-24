@@ -1,4 +1,5 @@
-import express from "express";
+import express from 'express';
+import mongoose from 'mongoose';
 import Emergencia from "../models/Emergencia.js";
 import Mascota from "../models/Mascota.js";
 import Prestador from "../models/Prestador.js";
@@ -435,21 +436,43 @@ router.post("/cercanas", protectRoute, async (req, res) => {
 router.patch("/:id/confirmar", protectRoute, async (req, res) => {
   try {
     const { metodoPago } = req.body;
+    console.log(`Recibida solicitud para confirmar emergencia ${req.params.id} con método de pago: ${metodoPago}`);
     
+    // Validación de ID
+    if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) {
+      console.log(`ID de emergencia inválido: ${req.params.id}`);
+      return res.status(400).json({ message: "ID de emergencia inválido" });
+    }
+    
+    // Buscar emergencia
     const emergencia = await Emergencia.findById(req.params.id);
     
     if (!emergencia) {
+      console.log(`Emergencia no encontrada con ID: ${req.params.id}`);
       return res.status(404).json({ message: "Emergencia no encontrada" });
     }
     
+    console.log(`Emergencia encontrada: ${emergencia._id}, estado actual: ${emergencia.estado}`);
+    
     // Verificar si el usuario actual es el propietario
-    if (emergencia.usuario.toString() !== req.user._id.toString()) {
+    if (emergencia.usuario && emergencia.usuario.toString() !== req.user._id.toString()) {
+      console.log(`Usuario no autorizado: ${req.user._id} vs propietario: ${emergencia.usuario}`);
       return res.status(401).json({ message: "No autorizado para confirmar esta emergencia" });
     }
     
     // Verificar que la emergencia tenga un veterinario asignado
     if (!emergencia.veterinario) {
+      console.log(`Emergencia sin veterinario asignado: ${emergencia._id}`);
       return res.status(400).json({ message: "No se puede confirmar una emergencia sin veterinario asignado" });
+    }
+    
+    // Verificar estado válido para confirmar
+    const estadosValidos = ["Solicitada", "Asignada"];
+    if (!estadosValidos.includes(emergencia.estado)) {
+      console.log(`Estado no válido para confirmar: ${emergencia.estado}`);
+      return res.status(400).json({ 
+        message: `No se puede confirmar una emergencia en estado ${emergencia.estado}. Debe estar en estado Solicitada o Asignada` 
+      });
     }
     
     // Actualizar estado y método de pago
@@ -457,11 +480,14 @@ router.patch("/:id/confirmar", protectRoute, async (req, res) => {
     
     if (metodoPago) {
       emergencia.metodoPago = metodoPago;
+    } else {
+      emergencia.metodoPago = "Efectivo"; // Valor por defecto
     }
     
     // Registrar fecha de confirmación
     emergencia.fechaConfirmacion = new Date();
     
+    console.log(`Guardando emergencia con estado: ${emergencia.estado} y método de pago: ${emergencia.metodoPago}`);
     await emergencia.save();
     
     // Devolver los datos actualizados de la emergencia
@@ -469,10 +495,11 @@ router.patch("/:id/confirmar", protectRoute, async (req, res) => {
       .populate("mascota", "nombre tipo raza imagen")
       .populate("veterinario", "nombre especialidad email telefono imagen rating");
     
-    res.status(200).json(emergenciaActualizada);
+    console.log(`Emergencia confirmada exitosamente: ${emergencia._id}`);
+    return res.status(200).json(emergenciaActualizada);
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ message: "Error al confirmar la emergencia" });
+    console.error(`Error al confirmar emergencia: ${error.message}`, error);
+    return res.status(500).json({ message: "Error al confirmar la emergencia", error: error.message });
   }
 });
 
