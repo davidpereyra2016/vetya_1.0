@@ -126,13 +126,12 @@ router.get('/prestadores', isAuthenticated, async (req, res) => {
     const response = await axios.get(`http://localhost:${process.env.PORT || 3000}/api/prestadores`, {
       headers: { Authorization: `Bearer ${res.locals.adminToken}` }
     });
-    // Temporalmente redireccionamos al dashboard simplificado
-    res.render('dashboard', { 
-      contadores: { prestadores: response.data.length || 0 },
-      mensaje: 'Visualización de prestadores en desarrollo. Se han encontrado ' + response.data.length + ' prestadores en el sistema.'
+    // Renderizamos la vista prestadores/index
+    res.render('prestadores/index', { 
+      prestadores: response.data
     });
   } catch (error) {
-    res.render('dashboard', { error: 'Error al cargar prestadores', contadores: {} });
+    res.render('prestadores/index', { error: 'Error al cargar prestadores', prestadores: [] });
   }
 });
 

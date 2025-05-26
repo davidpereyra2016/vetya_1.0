@@ -1,433 +1,562 @@
-<%- include('../layout', { title: 'Gestión de Prestadores', body: `
-<div class="container-fluid py-4">
-  <% if (typeof error !== 'undefined') { %>
-    <div class="alert alert-danger" role="alert">
-      <%= error %>
-    </div>
-  <% } %>
-  
-  <div class="card shadow mb-4">
-    <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
-      <h6 class="m-0 font-weight-bold text-primary">Listado de Prestadores de Servicio</h6>
-      <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#nuevoPrestadorModal">
-        <i class="fas fa-plus fa-sm"></i> Nuevo Prestador
-      </button>
-    </div>
-    <div class="card-body">
-      <div class="table-responsive">
-        <table class="table table-bordered" id="dataTable" width="100%" cellspacing="0">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Nombre</th>
-              <th>Especialidad</th>
-              <th>Ubicación</th>
-              <th>Estado</th>
-              <th>Valoración</th>
-              <th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            <% if (prestadores && prestadores.length > 0) { %>
-              <% prestadores.forEach(prestador => { %>
-                <tr>
-                  <td><%= prestador._id %></td>
-                  <td>
-                    <% if (prestador.foto) { %>
-                      <img src="<%= prestador.foto %>" alt="Foto" class="rounded-circle me-2" style="width: 30px; height: 30px; object-fit: cover;">
-                    <% } %>
-                    <%= prestador.nombre %> <%= prestador.apellido %>
-                  </td>
-                  <td><%= prestador.especialidad || 'N/A' %></td>
-                  <td>
-                    <% if (prestador.ubicacion && prestador.ubicacion.direccion) { %>
-                      <%= prestador.ubicacion.direccion %>
-                    <% } else { %>
-                      No especificada
-                    <% } %>
-                  </td>
-                  <td>
-                    <span class="badge <%= prestador.disponible ? 'bg-success' : 'bg-danger' %>">
-                      <%= prestador.disponible ? 'Disponible' : 'No disponible' %>
-                    </span>
-                  </td>
-                  <td>
-                    <% if (prestador.calificacionPromedio) { %>
-                      <div class="d-flex align-items-center">
-                        <%= prestador.calificacionPromedio %>/5
-                        <div class="ms-2">
-                          <% for (let i = 1; i <= 5; i++) { %>
-                            <i class="fas fa-star <%= i <= Math.round(prestador.calificacionPromedio) ? 'text-warning' : 'text-muted' %>"></i>
-                          <% } %>
-                        </div>
-                      </div>
-                    <% } else { %>
-                      Sin valoraciones
-                    <% } %>
-                  </td>
-                  <td>
-                    <a href="/admin/prestadores/<%= prestador._id %>" class="btn btn-info btn-sm">
-                      <i class="fas fa-eye"></i>
-                    </a>
-                    <button class="btn btn-warning btn-sm" onclick="editarPrestador('<%= prestador._id %>')">
-                      <i class="fas fa-edit"></i>
-                    </button>
-                    <button class="btn btn-danger btn-sm" onclick="eliminarPrestador('<%= prestador._id %>')">
-                      <i class="fas fa-trash"></i>
-                    </button>
-                  </td>
-                </tr>
-              <% }); %>
-            <% } else { %>
-              <tr>
-                <td colspan="7" class="text-center">No hay prestadores registrados</td>
-              </tr>
-            <% } %>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Modal para crear/editar prestador -->
-<div class="modal fade" id="nuevoPrestadorModal" tabindex="-1" aria-labelledby="nuevoPrestadorModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="nuevoPrestadorModalLabel">Nuevo Prestador</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <form id="prestadorForm">
-          <input type="hidden" id="prestadorId">
-          
-          <ul class="nav nav-tabs" id="myTab" role="tablist">
-            <li class="nav-item" role="presentation">
-              <button class="nav-link active" id="info-tab" data-bs-toggle="tab" data-bs-target="#info" type="button" role="tab">Información básica</button>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gestión de Prestadores - Vetya Admin</title>
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Font Awesome para iconos -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    body {
+      font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      background-color: #f8f9fc;
+    }
+    .sidebar {
+      min-height: 100vh;
+      box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
+    }
+    .sidebar .nav-item {
+      margin-bottom: 0.25rem;
+    }
+    .sidebar .nav-link {
+      padding: 0.75rem 1rem;
+      color: rgba(255, 255, 255, 0.8) !important;
+      transition: all 0.2s ease-in-out;
+    }
+    .sidebar .nav-link:hover {
+      background-color: rgba(255, 255, 255, 0.1);
+      color: #fff !important;
+    }
+    .card {
+      margin-bottom: 1.5rem;
+      border: none;
+      box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.1);
+    }
+  </style>
+</head>
+<body>
+  <div class="container-fluid">
+    <div class="row">
+      <!-- Sidebar -->
+      <div class="col-md-3 col-lg-2 d-md-block bg-dark sidebar collapse">
+        <div class="position-sticky pt-3">
+          <div class="text-center mb-4">
+            <h4 class="text-white">Vetya Admin</h4>
+          </div>
+          <ul class="nav flex-column">
+            <li class="nav-item">
+              <a class="nav-link text-white" href="/admin/dashboard">
+                <i class="fas fa-tachometer-alt me-2"></i>
+                Dashboard
+              </a>
             </li>
-            <li class="nav-item" role="presentation">
-              <button class="nav-link" id="ubicacion-tab" data-bs-toggle="tab" data-bs-target="#ubicacion" type="button" role="tab">Ubicación</button>
+            <li class="nav-item">
+              <a class="nav-link text-white" href="/admin/usuarios">
+                <i class="fas fa-users me-2"></i>
+                Usuarios
+              </a>
             </li>
-            <li class="nav-item" role="presentation">
-              <button class="nav-link" id="servicios-tab" data-bs-toggle="tab" data-bs-target="#servicios" type="button" role="tab">Servicios</button>
+            <li class="nav-item">
+              <a class="nav-link text-white active" href="/admin/prestadores">
+                <i class="fas fa-user-md me-2"></i>
+                Prestadores
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link text-white" href="/admin/mascotas">
+                <i class="fas fa-paw me-2"></i>
+                Mascotas
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link text-white" href="/admin/citas">
+                <i class="fas fa-calendar-check me-2"></i>
+                Citas
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link text-white" href="/admin/servicios">
+                <i class="fas fa-concierge-bell me-2"></i>
+                Servicios
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link text-white" href="/admin/emergencias">
+                <i class="fas fa-ambulance me-2"></i>
+                Emergencias
+              </a>
+            </li>
+            <li class="nav-item mt-5">
+              <a class="nav-link text-white" href="/admin/logout">
+                <i class="fas fa-sign-out-alt me-2"></i>
+                Cerrar sesión
+              </a>
             </li>
           </ul>
-          
-          <div class="tab-content pt-3" id="myTabContent">
-            <!-- Información básica -->
-            <div class="tab-pane fade show active" id="info" role="tabpanel" aria-labelledby="info-tab">
-              <div class="row">
-                <div class="col-md-6 mb-3">
-                  <label for="nombre" class="form-label">Nombre</label>
-                  <input type="text" class="form-control" id="nombre" name="nombre" required>
-                </div>
-                <div class="col-md-6 mb-3">
-                  <label for="apellido" class="form-label">Apellido</label>
-                  <input type="text" class="form-control" id="apellido" name="apellido" required>
-                </div>
-              </div>
-              
-              <div class="row">
-                <div class="col-md-6 mb-3">
-                  <label for="email" class="form-label">Email</label>
-                  <input type="email" class="form-control" id="email" name="email" required>
-                </div>
-                <div class="col-md-6 mb-3">
-                  <label for="telefono" class="form-label">Teléfono</label>
-                  <input type="text" class="form-control" id="telefono" name="telefono">
-                </div>
-              </div>
-              
-              <div class="row">
-                <div class="col-md-6 mb-3">
-                  <label for="especialidad" class="form-label">Especialidad</label>
-                  <select class="form-control" id="especialidad" name="especialidad">
-                    <option value="">Seleccionar especialidad</option>
-                    <option value="Medicina general">Medicina general</option>
-                    <option value="Cirugía">Cirugía</option>
-                    <option value="Dermatología">Dermatología</option>
-                    <option value="Odontología">Odontología</option>
-                    <option value="Oftalmología">Oftalmología</option>
-                    <option value="Cardiología">Cardiología</option>
-                    <option value="Traumatología">Traumatología</option>
-                  </select>
-                </div>
-                <div class="col-md-6 mb-3">
-                  <label for="disponible" class="form-label">Estado</label>
-                  <select class="form-control" id="disponible" name="disponible">
-                    <option value="true">Disponible</option>
-                    <option value="false">No disponible</option>
-                  </select>
-                </div>
-              </div>
-              
-              <div class="mb-3">
-                <label for="descripcion" class="form-label">Descripción</label>
-                <textarea class="form-control" id="descripcion" name="descripcion" rows="3"></textarea>
-              </div>
-              
-              <div class="mb-3">
-                <label for="foto" class="form-label">URL de foto</label>
-                <input type="url" class="form-control" id="foto" name="foto">
-              </div>
-            </div>
-            
-            <!-- Ubicación -->
-            <div class="tab-pane fade" id="ubicacion" role="tabpanel" aria-labelledby="ubicacion-tab">
-              <div class="alert alert-info">
-                <i class="fas fa-info-circle me-2"></i> Nota: Las distancias mostradas a los clientes incluirán un radio de privacidad de 1km para proteger la ubicación exacta de los prestadores.
-              </div>
-              
-              <div class="mb-3">
-                <label for="direccion" class="form-label">Dirección</label>
-                <input type="text" class="form-control" id="direccion" name="direccion">
-              </div>
-              
-              <div class="row">
-                <div class="col-md-6 mb-3">
-                  <label for="latitud" class="form-label">Latitud</label>
-                  <input type="number" step="any" class="form-control" id="latitud" name="latitud">
-                </div>
-                <div class="col-md-6 mb-3">
-                  <label for="longitud" class="form-label">Longitud</label>
-                  <input type="number" step="any" class="form-control" id="longitud" name="longitud">
-                </div>
-              </div>
-              
-              <div class="row">
-                <div class="col-md-6 mb-3">
-                  <label for="ciudad" class="form-label">Ciudad</label>
-                  <input type="text" class="form-control" id="ciudad" name="ciudad">
-                </div>
-                <div class="col-md-6 mb-3">
-                  <label for="codigoPostal" class="form-label">Código Postal</label>
-                  <input type="text" class="form-control" id="codigoPostal" name="codigoPostal">
-                </div>
-              </div>
-            </div>
-            
-            <!-- Servicios -->
-            <div class="tab-pane fade" id="servicios" role="tabpanel" aria-labelledby="servicios-tab">
-              <div class="mb-3">
-                <label class="form-label">Servicios ofrecidos</label>
-                <div class="form-check">
-                  <input class="form-check-input" type="checkbox" id="consulta" name="servicios" value="consulta">
-                  <label class="form-check-label" for="consulta">Consulta general</label>
-                </div>
-                <div class="form-check">
-                  <input class="form-check-input" type="checkbox" id="vacunacion" name="servicios" value="vacunacion">
-                  <label class="form-check-label" for="vacunacion">Vacunación</label>
-                </div>
-                <div class="form-check">
-                  <input class="form-check-input" type="checkbox" id="cirugia" name="servicios" value="cirugia">
-                  <label class="form-check-label" for="cirugia">Cirugía</label>
-                </div>
-                <div class="form-check">
-                  <input class="form-check-input" type="checkbox" id="laboratorio" name="servicios" value="laboratorio">
-                  <label class="form-check-label" for="laboratorio">Análisis de laboratorio</label>
-                </div>
-                <div class="form-check">
-                  <input class="form-check-input" type="checkbox" id="emergencia" name="servicios" value="emergencia">
-                  <label class="form-check-label" for="emergencia">Servicio de emergencia</label>
-                </div>
-                <div class="form-check">
-                  <input class="form-check-input" type="checkbox" id="domicilio" name="servicios" value="domicilio">
-                  <label class="form-check-label" for="domicilio">Visitas a domicilio</label>
-                </div>
-              </div>
-              
-              <div class="mb-3">
-                <label for="precioConsulta" class="form-label">Precio de consulta básica</label>
-                <div class="input-group">
-                  <span class="input-group-text">$</span>
-                  <input type="number" class="form-control" id="precioConsulta" name="precioConsulta">
-                </div>
-              </div>
-              
-              <div class="mb-3">
-                <label for="horarioAtencion" class="form-label">Horario de atención</label>
-                <textarea class="form-control" id="horarioAtencion" name="horarioAtencion" rows="3" placeholder="Ej: Lunes a Viernes: 9:00 - 18:00, Sábados: 9:00 - 13:00"></textarea>
-              </div>
+        </div>
+      </div>
+      
+      <!-- Contenido principal -->
+      <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+        <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+          <h1 class="h2">Gestión de Prestadores</h1>
+        </div>
+        
+        <% if (typeof error !== 'undefined') { %>
+          <div class="alert alert-danger" role="alert">
+            <%= error %>
+          </div>
+        <% } %>
+        
+        <div class="card shadow mb-4">
+          <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+            <h6 class="m-0 font-weight-bold text-primary">Listado de Prestadores de Servicio</h6>
+            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#nuevoPrestadorModal">
+              <i class="fas fa-plus fa-sm"></i> Nuevo Prestador
+            </button>
+          </div>
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="table table-bordered" id="dataTable" width="100%" cellspacing="0">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Nombre</th>
+                    <th>Especialidad</th>
+                    <th>Ubicación</th>
+                    <th>Estado</th>
+                    <th>Valoración</th>
+                    <th>Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <% if (prestadores && prestadores.length > 0) { %>
+                    <% prestadores.forEach(prestador => { %>
+                      <tr>
+                        <td><%= prestador._id %></td>
+                        <td>
+                          <%= prestador.nombre %> <%= prestador.apellido %>
+                          <% if (prestador.disponibleEmergencias) { %>
+                            <span class="badge bg-success">Emergencias</span>
+                          <% } %>
+                        </td>
+                        <td><%= prestador.especialidad || 'No especificada' %></td>
+                        <td>
+                          <% if (prestador.ubicacion && prestador.ubicacion.direccion) { %>
+                            <%= prestador.ubicacion.direccion %>
+                          <% } else { %>
+                            No especificada
+                          <% } %>
+                        </td>
+                        <td>
+                          <span class="badge <%= prestador.activo ? 'bg-success' : 'bg-danger' %>">
+                            <%= prestador.activo ? 'Activo' : 'Inactivo' %>
+                          </span>
+                        </td>
+                        <td>
+                          <% if (prestador.valoracion) { %>
+                            <div class="d-flex align-items-center">
+                              <%= prestador.valoracion.promedio.toFixed(1) %>
+                              <div class="ms-2">
+                                <% for(let i = 0; i < Math.floor(prestador.valoracion.promedio); i++) { %>
+                                  <i class="fas fa-star text-warning"></i>
+                                <% } %>
+                                <% if (prestador.valoracion.promedio % 1 > 0) { %>
+                                  <i class="fas fa-star-half-alt text-warning"></i>
+                                <% } %>
+                              </div>
+                              <small class="text-muted ms-2">(<%= prestador.valoracion.total %>)</small>
+                            </div>
+                          <% } else { %>
+                            Sin valoraciones
+                          <% } %>
+                        </td>
+                        <td>
+                          <div class="btn-group" role="group">
+                            <button class="btn btn-info btn-sm" onclick="editarPrestador('<%= prestador._id %>')">
+                              <i class="fas fa-edit"></i>
+                            </button>
+                            <% if (prestador.documentacion && prestador.documentacion.length > 0) { %>
+                              <button class="btn btn-secondary btn-sm" onclick="verDocumentacion('<%= prestador._id %>')">
+                                <i class="fas fa-file-alt"></i>
+                              </button>
+                            <% } %>
+                            <button class="btn btn-danger btn-sm" onclick="confirmarEliminar('<%= prestador._id %>')">
+                              <i class="fas fa-trash"></i>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    <% }) %>
+                  <% } else { %>
+                    <tr>
+                      <td colspan="7" class="text-center">No hay prestadores registrados</td>
+                    </tr>
+                  <% } %>
+                </tbody>
+              </table>
             </div>
           </div>
-        </form>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-        <button type="button" class="btn btn-primary" id="guardarPrestador">Guardar</button>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Modal para nuevo prestador -->
+  <div class="modal fade" id="nuevoPrestadorModal" tabindex="-1" aria-labelledby="nuevoPrestadorModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="nuevoPrestadorModalLabel">Nuevo Prestador</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="prestadorForm">
+            <input type="hidden" id="prestadorId">
+            
+            <ul class="nav nav-tabs" id="myTab" role="tablist">
+              <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="info-tab" data-bs-toggle="tab" data-bs-target="#info" type="button" role="tab" aria-controls="info" aria-selected="true">Información Básica</button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link" id="ubicacion-tab" data-bs-toggle="tab" data-bs-target="#ubicacion" type="button" role="tab" aria-controls="ubicacion" aria-selected="false">Ubicación</button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link" id="servicios-tab" data-bs-toggle="tab" data-bs-target="#servicios" type="button" role="tab" aria-controls="servicios" aria-selected="false">Servicios</button>
+              </li>
+            </ul>
+            
+            <div class="tab-content pt-3" id="myTabContent">
+              <!-- Información básica -->
+              <div class="tab-pane fade show active" id="info" role="tabpanel" aria-labelledby="info-tab">
+                <div class="row">
+                  <div class="col-md-6 mb-3">
+                    <label for="nombre" class="form-label">Nombre</label>
+                    <input type="text" class="form-control" id="nombre" name="nombre" required>
+                  </div>
+                  <div class="col-md-6 mb-3">
+                    <label for="apellido" class="form-label">Apellido</label>
+                    <input type="text" class="form-control" id="apellido" name="apellido" required>
+                  </div>
+                </div>
+                
+                <div class="row">
+                  <div class="col-md-6 mb-3">
+                    <label for="email" class="form-label">Email</label>
+                    <input type="email" class="form-control" id="email" name="email" required>
+                  </div>
+                  <div class="col-md-6 mb-3">
+                    <label for="telefono" class="form-label">Teléfono</label>
+                    <input type="tel" class="form-control" id="telefono" name="telefono" required>
+                  </div>
+                </div>
+                
+                <div class="row">
+                  <div class="col-md-6 mb-3">
+                    <label for="especialidad" class="form-label">Especialidad</label>
+                    <select class="form-select" id="especialidad" name="especialidad">
+                      <option value="Veterinario General">Veterinario General</option>
+                      <option value="Cirujano Veterinario">Cirujano Veterinario</option>
+                      <option value="Dermatología Veterinaria">Dermatología Veterinaria</option>
+                      <option value="Oftalmología Veterinaria">Oftalmología Veterinaria</option>
+                      <option value="Odontología Veterinaria">Odontología Veterinaria</option>
+                      <option value="Medicina Felina">Medicina Felina</option>
+                      <option value="Medicina Canina">Medicina Canina</option>
+                      <option value="Exóticos">Animales Exóticos</option>
+                    </select>
+                  </div>
+                  <div class="col-md-6 mb-3">
+                    <label for="disponibleEmergencias" class="form-label">Disponibilidad</label>
+                    <div class="form-check form-switch">
+                      <input class="form-check-input" type="checkbox" id="disponibleEmergencias" name="disponibleEmergencias">
+                      <label class="form-check-label" for="disponibleEmergencias">Disponible para emergencias</label>
+                    </div>
+                    <div class="form-check form-switch mt-2">
+                      <input class="form-check-input" type="checkbox" id="activo" name="activo" checked>
+                      <label class="form-check-label" for="activo">Prestador activo</label>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="mb-3">
+                  <label for="descripcion" class="form-label">Descripción/Biografía</label>
+                  <textarea class="form-control" id="descripcion" name="descripcion" rows="3"></textarea>
+                </div>
+              </div>
+              
+              <!-- Ubicación -->
+              <div class="tab-pane fade" id="ubicacion" role="tabpanel" aria-labelledby="ubicacion-tab">
+                <div class="mb-3">
+                  <label for="direccion" class="form-label">Dirección</label>
+                  <input type="text" class="form-control" id="direccion" name="direccion">
+                </div>
+                <div class="row">
+                  <div class="col-md-6 mb-3">
+                    <label for="lat" class="form-label">Latitud</label>
+                    <input type="number" step="any" class="form-control" id="lat" name="lat">
+                  </div>
+                  <div class="col-md-6 mb-3">
+                    <label for="lng" class="form-label">Longitud</label>
+                    <input type="number" step="any" class="form-control" id="lng" name="lng">
+                  </div>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label">Zonas de cobertura</label>
+                  <input type="text" class="form-control" id="zonas" name="zonas" placeholder="Ej: Centro, Zona Norte, Parque Batlle (separadas por comas)">
+                </div>
+                <div class="mb-3">
+                  <label for="radioAtencion" class="form-label">Radio de atención (km)</label>
+                  <input type="number" step="0.5" class="form-control" id="radioAtencion" name="radioAtencion" value="5">
+                  <small class="text-muted">Radio en kilómetros dentro del cual el prestador está dispuesto a atender.</small>
+                </div>
+              </div>
+              
+              <!-- Servicios -->
+              <div class="tab-pane fade" id="servicios" role="tabpanel" aria-labelledby="servicios-tab">
+                <div class="mb-3">
+                  <label class="form-label">Servicios ofrecidos</label>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="consulta" name="servicios" value="consulta">
+                    <label class="form-check-label" for="consulta">Consulta general</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="vacunacion" name="servicios" value="vacunacion">
+                    <label class="form-check-label" for="vacunacion">Vacunación</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="cirugia" name="servicios" value="cirugia">
+                    <label class="form-check-label" for="cirugia">Cirugía</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="estetica" name="servicios" value="estetica">
+                    <label class="form-check-label" for="estetica">Estética y peluquería</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="laboratorio" name="servicios" value="laboratorio">
+                    <label class="form-check-label" for="laboratorio">Análisis de laboratorio</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="ecografia" name="servicios" value="ecografia">
+                    <label class="form-check-label" for="ecografia">Ecografía y diagnóstico por imágenes</label>
+                  </div>
+                  <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="domicilio" name="servicios" value="domicilio">
+                    <label class="form-check-label" for="domicilio">Consultas a domicilio</label>
+                  </div>
+                </div>
+                
+                <div class="mb-3">
+                  <label for="tarifaConsulta" class="form-label">Tarifa consulta básica ($)</label>
+                  <input type="number" step="50" class="form-control" id="tarifaConsulta" name="tarifaConsulta">
+                </div>
+                
+                <div class="mb-3">
+                  <label for="horariosAtencion" class="form-label">Horarios de atención</label>
+                  <textarea class="form-control" id="horariosAtencion" name="horariosAtencion" rows="2" placeholder="Ej: Lunes a Viernes de 9 a 18hs, Sábados de 9 a 13hs"></textarea>
+                </div>
+              </div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-primary" id="guardarPrestador">Guardar</button>
+        </div>
       </div>
     </div>
   </div>
-</div>
 
-<!-- Modal de confirmación para eliminar -->
-<div class="modal fade" id="eliminarPrestadorModal" tabindex="-1" aria-labelledby="eliminarPrestadorModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="eliminarPrestadorModalLabel">Confirmar eliminación</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        ¿Estás seguro de que deseas eliminar este prestador? Esta acción no se puede deshacer y afectará a todas las citas y servicios asociados.
-        <input type="hidden" id="eliminarPrestadorId">
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-        <button type="button" class="btn btn-danger" id="confirmarEliminar">Eliminar</button>
+  <!-- Modal de confirmación para eliminar -->
+  <div class="modal fade" id="eliminarPrestadorModal" tabindex="-1" aria-labelledby="eliminarPrestadorModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="eliminarPrestadorModalLabel">Confirmar eliminación</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          ¿Estás seguro de que deseas eliminar este prestador? Esta acción no se puede deshacer.
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-danger" id="confirmarEliminar">Eliminar</button>
+        </div>
       </div>
     </div>
   </div>
-</div>
 
-<script>
-  // Funciones para CRUD de prestadores
-  function editarPrestador(id) {
-    // Obtener datos del prestador y llenar el formulario
-    fetch('/api/prestadores/' + id, {
-      headers: {
-        'Authorization': 'Bearer ' + document.cookie.replace(/(?:(?:^|.*;\s*)adminToken\s*\=\s*([^;]*).*$)|^.*$/, "$1")
-      }
-    })
-    .then(response => response.json())
-    .then(data => {
-      document.getElementById('prestadorId').value = data._id;
-      document.getElementById('nombre').value = data.nombre || '';
-      document.getElementById('apellido').value = data.apellido || '';
-      document.getElementById('email').value = data.email || '';
-      document.getElementById('telefono').value = data.telefono || '';
-      document.getElementById('especialidad').value = data.especialidad || '';
-      document.getElementById('disponible').value = data.disponible.toString();
-      document.getElementById('descripcion').value = data.descripcion || '';
-      document.getElementById('foto').value = data.foto || '';
-      
-      // Ubicación
-      if (data.ubicacion) {
-        document.getElementById('direccion').value = data.ubicacion.direccion || '';
-        document.getElementById('latitud').value = data.ubicacion.coordenadas ? data.ubicacion.coordenadas[1] : '';
-        document.getElementById('longitud').value = data.ubicacion.coordenadas ? data.ubicacion.coordenadas[0] : '';
-        document.getElementById('ciudad').value = data.ubicacion.ciudad || '';
-        document.getElementById('codigoPostal').value = data.ubicacion.codigoPostal || '';
-      }
-      
-      // Servicios
-      if (data.servicios && Array.isArray(data.servicios)) {
-        document.querySelectorAll('input[name="servicios"]').forEach(checkbox => {
-          checkbox.checked = data.servicios.includes(checkbox.value);
+  <!-- Bootstrap JS y dependencias -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // Variables globales
+    let prestadorIdEliminar = null;
+    
+    // Funciones para CRUD de prestadores
+    function editarPrestador(id) {
+      // Obtener datos del prestador y llenar el formulario
+      fetch('/api/prestadores/' + id, {
+        headers: {
+          'Authorization': 'Bearer ' + document.cookie.replace(/(?:(?:^|.*;\s*)adminToken\s*\=\s*([^;]*).*$)|^.*$/, "$1")
+        }
+      })
+      .then(response => response.json())
+      .then(data => {
+        document.getElementById('prestadorId').value = data._id;
+        document.getElementById('nombre').value = data.nombre || '';
+        document.getElementById('apellido').value = data.apellido || '';
+        document.getElementById('email').value = data.email || '';
+        document.getElementById('telefono').value = data.telefono || '';
+        document.getElementById('especialidad').value = data.especialidad || '';
+        document.getElementById('descripcion').value = data.descripcion || '';
+        document.getElementById('disponibleEmergencias').checked = data.disponibleEmergencias || false;
+        document.getElementById('activo').checked = data.activo !== false;
+        
+        // Ubicación
+        if (data.ubicacion) {
+          document.getElementById('direccion').value = data.ubicacion.direccion || '';
+          if (data.ubicacion.coordinates) {
+            document.getElementById('lat').value = data.ubicacion.coordinates.lat || '';
+            document.getElementById('lng').value = data.ubicacion.coordinates.lng || '';
+          }
+        }
+        
+        // Zonas
+        if (data.zonas && data.zonas.length) {
+          document.getElementById('zonas').value = data.zonas.join(', ');
+        }
+        
+        // Radio de atención
+        document.getElementById('radioAtencion').value = data.radioAtencion || 5;
+        
+        // Servicios
+        const serviciosInputs = document.querySelectorAll('input[name="servicios"]');
+        serviciosInputs.forEach(input => {
+          input.checked = data.servicios && data.servicios.includes(input.value);
         });
-      }
-      
-      document.getElementById('precioConsulta').value = data.precioConsulta || '';
-      document.getElementById('horarioAtencion').value = data.horarioAtencion || '';
-      
-      document.getElementById('nuevoPrestadorModalLabel').textContent = 'Editar Prestador';
-      
-      // Mostrar el modal
-      new bootstrap.Modal(document.getElementById('nuevoPrestadorModal')).show();
-    })
-    .catch(error => console.error('Error:', error));
-  }
-
-  function eliminarPrestador(id) {
-    document.getElementById('eliminarPrestadorId').value = id;
-    new bootstrap.Modal(document.getElementById('eliminarPrestadorModal')).show();
-  }
-
-  // Configurar eventos de los botones
-  document.addEventListener('DOMContentLoaded', function() {
-    // Guardar prestador (crear o actualizar)
-    document.getElementById('guardarPrestador').addEventListener('click', function() {
-      const prestadorId = document.getElementById('prestadorId').value;
-      const method = prestadorId ? 'PUT' : 'POST';
-      const url = prestadorId ? '/api/prestadores/' + prestadorId : '/api/prestadores';
-      
-      // Recopilar servicios seleccionados
-      const serviciosSeleccionados = [];
-      document.querySelectorAll('input[name="servicios"]:checked').forEach(checkbox => {
-        serviciosSeleccionados.push(checkbox.value);
-      });
-      
-      const prestadorData = {
-        nombre: document.getElementById('nombre').value,
-        apellido: document.getElementById('apellido').value,
-        email: document.getElementById('email').value,
-        telefono: document.getElementById('telefono').value,
-        especialidad: document.getElementById('especialidad').value,
-        disponible: document.getElementById('disponible').value === 'true',
-        descripcion: document.getElementById('descripcion').value,
-        foto: document.getElementById('foto').value,
-        ubicacion: {
-          direccion: document.getElementById('direccion').value,
-          coordenadas: [
-            parseFloat(document.getElementById('longitud').value) || 0,
-            parseFloat(document.getElementById('latitud').value) || 0
-          ],
-          ciudad: document.getElementById('ciudad').value,
-          codigoPostal: document.getElementById('codigoPostal').value
-        },
-        servicios: serviciosSeleccionados,
-        precioConsulta: document.getElementById('precioConsulta').value,
-        horarioAtencion: document.getElementById('horarioAtencion').value
-      };
-      
-      fetch(url, {
-        method: method,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': \`Bearer \${document.cookie.replace(/(?:(?:^|.*;\s*)adminToken\s*\=\s*([^;]*).*$)|^.*$/, "$1")}\`
-        },
-        body: JSON.stringify(prestadorData)
-      })
-      .then(response => {
-        if (!response.ok) {
-          throw new Error('Error en la solicitud');
+        
+        // Tarifas
+        if (data.tarifas) {
+          document.getElementById('tarifaConsulta').value = data.tarifas.consulta || '';
         }
-        return response.json();
+        
+        // Horarios
+        document.getElementById('horariosAtencion').value = data.horariosAtencion || '';
+        
+        // Mostrar modal
+        new bootstrap.Modal(document.getElementById('nuevoPrestadorModal')).show();
       })
-      .then(() => {
-        // Cerrar modal y recargar página
-        bootstrap.Modal.getInstance(document.getElementById('nuevoPrestadorModal')).hide();
-        window.location.reload();
-      })
-      .catch(error => {
-        alert('Error al guardar prestador: ' + error.message);
-      });
-    });
+      .catch(error => console.error('Error:', error));
+    }
     
-    // Confirmar eliminación
-    document.getElementById('confirmarEliminar').addEventListener('click', function() {
-      const prestadorId = document.getElementById('eliminarPrestadorId').value;
+    function confirmarEliminar(id) {
+      prestadorIdEliminar = id;
+      new bootstrap.Modal(document.getElementById('eliminarPrestadorModal')).show();
+    }
+    
+    // Obtener token desde cookies
+    function obtenerToken() {
+      const tokenMatch = document.cookie.match(/adminToken=([^;]+)/);
+      return tokenMatch ? tokenMatch[1] : '';
+    }
+    
+    document.addEventListener('DOMContentLoaded', function() {
+      // Guardar prestador (crear o actualizar)
+      document.getElementById('guardarPrestador').addEventListener('click', function() {
+        const prestadorId = document.getElementById('prestadorId').value;
+        const method = prestadorId ? 'PUT' : 'POST';
+        const url = prestadorId ? `/api/prestadores/${prestadorId}` : '/api/prestadores';
+        
+        // Recopilar datos del formulario
+        const serviciosSeleccionados = [];
+        document.querySelectorAll('input[name="servicios"]:checked').forEach(input => {
+          serviciosSeleccionados.push(input.value);
+        });
+        
+        const zonasArray = document.getElementById('zonas').value
+          ? document.getElementById('zonas').value.split(',').map(zona => zona.trim())
+          : [];
+        
+        const formData = {
+          nombre: document.getElementById('nombre').value,
+          apellido: document.getElementById('apellido').value,
+          email: document.getElementById('email').value,
+          telefono: document.getElementById('telefono').value,
+          especialidad: document.getElementById('especialidad').value,
+          descripcion: document.getElementById('descripcion').value,
+          disponibleEmergencias: document.getElementById('disponibleEmergencias').checked,
+          activo: document.getElementById('activo').checked,
+          ubicacion: {
+            direccion: document.getElementById('direccion').value,
+            coordinates: {
+              lat: parseFloat(document.getElementById('lat').value) || 0,
+              lng: parseFloat(document.getElementById('lng').value) || 0
+            }
+          },
+          zonas: zonasArray,
+          radioAtencion: parseFloat(document.getElementById('radioAtencion').value) || 5,
+          servicios: serviciosSeleccionados,
+          tarifas: {
+            consulta: parseFloat(document.getElementById('tarifaConsulta').value) || 0
+          },
+          horariosAtencion: document.getElementById('horariosAtencion').value
+        };
+        
+        fetch(url, {
+          method: method,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + obtenerToken()
+          },
+          body: JSON.stringify(formData)
+        })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('Error al guardar prestador');
+          }
+          return response.json();
+        })
+        .then(() => {
+          // Cerrar modal y recargar página
+          const modal = bootstrap.Modal.getInstance(document.getElementById('nuevoPrestadorModal'));
+          modal.hide();
+          window.location.reload();
+        })
+        .catch(error => {
+          console.error('Error:', error);
+          alert('Error al guardar el prestador: ' + error.message);
+        });
+      });
       
-      fetch('/api/prestadores/' + prestadorId, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': \`Bearer \${document.cookie.replace(/(?:(?:^|.*;\s*)adminToken\s*\=\s*([^;]*).*$)|^.*$/, "$1")}\`
-        }
-      })
-      .then(response => {
-        if (!response.ok) {
-          throw new Error('Error en la solicitud');
-        }
-        return response.json();
-      })
-      .then(() => {
-        bootstrap.Modal.getInstance(document.getElementById('eliminarPrestadorModal')).hide();
-        window.location.reload();
-      })
-      .catch(error => {
-        alert('Error al eliminar prestador: ' + error.message);
+      // Eliminar prestador
+      document.getElementById('confirmarEliminar').addEventListener('click', function() {
+        if (!prestadorIdEliminar) return;
+        
+        fetch(`/api/prestadores/${prestadorIdEliminar}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': 'Bearer ' + obtenerToken()
+          }
+        })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('Error al eliminar prestador');
+          }
+          return response.json();
+        })
+        .then(() => {
+          // Cerrar modal y recargar página
+          const modal = bootstrap.Modal.getInstance(document.getElementById('eliminarPrestadorModal'));
+          modal.hide();
+          window.location.reload();
+        })
+        .catch(error => {
+          console.error('Error:', error);
+          alert('Error al eliminar el prestador: ' + error.message);
+        });
       });
     });
-    
-    // Limpiar formulario al abrir modal de nuevo prestador
-    document.getElementById('nuevoPrestadorModal').addEventListener('show.bs.modal', function(event) {
-      if (!event.relatedTarget || !event.relatedTarget.classList.contains('btn-warning')) {
-        document.getElementById('prestadorForm').reset();
-        document.getElementById('prestadorId').value = '';
-        document.getElementById('nuevoPrestadorModalLabel').textContent = 'Nuevo Prestador';
-      }
-    });
-  });
-</script>
-` }) %>
+  </script>
+</body>
+</html>
