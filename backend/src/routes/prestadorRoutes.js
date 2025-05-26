@@ -4,6 +4,33 @@ import Prestador from '../models/Prestador.js';
 import Servicio from '../models/Servicio.js';
 import User from '../models/User.js';
 import { protectRoute, checkRole } from '../middleware/auth.middleware.js';
+import { v2 as cloudinary } from 'cloudinary';
+import multer from 'multer';
+import { existsSync, mkdirSync } from 'fs';
+import path from 'path';
+
+// Configuración de Cloudinary
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+// Configuración de multer para subir imágenes
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        const uploadDir = './uploads/';
+        if (!existsSync(uploadDir)) {
+            mkdirSync(uploadDir, { recursive: true });
+        }
+        cb(null, uploadDir);
+    },
+    filename: function (req, file, cb) {
+        cb(null, `${Date.now()}-${file.originalname}`);
+    }
+});
+
+const upload = multer({ storage });
 
 /**
  * Calcula la distancia entre dos puntos geográficos usando la fórmula de Haversine
@@ -392,6 +419,24 @@ router.patch('/:id/ubicacion', protectRoute, async (req, res) => {
       },
       ultimaActualizacion: new Date()
     };
+    
+    // Asegurarse de que también se actualice el campo de ubicación para búsquedas de emergencias
+    if (!prestador.ubicacion) {
+      prestador.ubicacion = {
+        coordenadas: {
+          lat: parseFloat(lat),
+          lng: parseFloat(lng)
+        },
+        direccion: "Actualizado por GPS",
+        ciudad: "Detección automática"
+      };
+    } else {
+      // Actualizar sólo las coordenadas si ya existe el campo ubicacion
+      prestador.ubicacion.coordenadas = {
+        lat: parseFloat(lat),
+        lng: parseFloat(lng)
+      };
+    }
     
     await prestador.save();
     
@@ -811,6 +856,58 @@ router.delete('/:prestadorId/servicios/:servicioId', protectRoute, async (req, r
   } catch (error) {
     console.log('Error al eliminar servicio:', error.message);
     res.status(500).json({ message: 'Error al eliminar el servicio' });
+  }
+});
+
+// Subir imagen de perfil para prestadores (actualiza tanto el usuario como el prestador)
+router.post('/profile-picture', protectRoute, upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: 'No se ha proporcionado ninguna imagen' });
+    }
+    
+    // Buscar si el usuario es un prestador
+    const prestador = await Prestador.findOne({ usuario: req.user._id });
+    
+    if (!prestador) {
+      return res.status(404).json({ message: 'No se encontró el perfil de prestador para este usuario' });
+    }
+    
+    // Subir imagen a Cloudinary
+    const result = await cloudinary.uploader.upload(req.file.path, {
+      folder: 'profile_pictures',
+      transformation: [
+        { width: 500, height: 500, crop: 'limit' }
+      ]
+    });
+    
+    console.log('Imagen subida a Cloudinary:', result.secure_url);
+    
+    // Actualizar la URL de la imagen tanto en el usuario como en el prestador
+    const userId = req.user._id;
+    
+    // 1. Actualizar en la tabla User
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { profilePicture: result.secure_url },
+      { new: true }
+    ).select('-password');
+    
+    // 2. Actualizar en la tabla Prestador
+    const updatedPrestador = await Prestador.findByIdAndUpdate(
+      prestador._id,
+      { imagen: result.secure_url },
+      { new: true }
+    );
+    
+    res.json({
+      user: updatedUser,
+      prestador: updatedPrestador,
+      message: 'Imagen de perfil actualizada con éxito'
+    });
+  } catch (error) {
+    console.error('Error al subir imagen de prestador:', error);
+    res.status(500).json({ message: 'Error al subir la imagen' });
   }
 });
 

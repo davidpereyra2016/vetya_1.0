@@ -1,0 +1,239 @@
+<%- include('../layout', { title: 'Gestión de Usuarios', body: `
+<div class="container-fluid py-4">
+  <% if (typeof error !== 'undefined') { %>
+    <div class="alert alert-danger" role="alert">
+      <%= error %>
+    </div>
+  <% } %>
+  
+  <div class="card shadow mb-4">
+    <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+      <h6 class="m-0 font-weight-bold text-primary">Listado de Usuarios</h6>
+      <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#nuevoUsuarioModal">
+        <i class="fas fa-plus fa-sm"></i> Nuevo Usuario
+      </button>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-bordered" id="dataTable" width="100%" cellspacing="0">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Nombre</th>
+              <th>Email</th>
+              <th>Rol</th>
+              <th>Fecha de registro</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (usuarios && usuarios.length > 0) { %>
+              <% usuarios.forEach(usuario => { %>
+                <tr>
+                  <td><%= usuario._id %></td>
+                  <td><%= usuario.nombre %> <%= usuario.apellido %></td>
+                  <td><%= usuario.email %></td>
+                  <td><%= usuario.role || 'usuario' %></td>
+                  <td><%= new Date(usuario.createdAt).toLocaleDateString() %></td>
+                  <td>
+                    <a href="/admin/usuarios/<%= usuario._id %>" class="btn btn-info btn-sm">
+                      <i class="fas fa-eye"></i>
+                    </a>
+                    <button class="btn btn-warning btn-sm" onclick="editarUsuario('<%= usuario._id %>')">
+                      <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="btn btn-danger btn-sm" onclick="eliminarUsuario('<%= usuario._id %>')">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </td>
+                </tr>
+              <% }); %>
+            <% } else { %>
+              <tr>
+                <td colspan="6" class="text-center">No hay usuarios registrados</td>
+              </tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal para crear/editar usuario -->
+<div class="modal fade" id="nuevoUsuarioModal" tabindex="-1" aria-labelledby="nuevoUsuarioModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="nuevoUsuarioModalLabel">Nuevo Usuario</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <form id="usuarioForm">
+          <input type="hidden" id="usuarioId">
+          <div class="mb-3">
+            <label for="nombre" class="form-label">Nombre</label>
+            <input type="text" class="form-control" id="nombre" name="nombre" required>
+          </div>
+          <div class="mb-3">
+            <label for="apellido" class="form-label">Apellido</label>
+            <input type="text" class="form-control" id="apellido" name="apellido" required>
+          </div>
+          <div class="mb-3">
+            <label for="email" class="form-label">Email</label>
+            <input type="email" class="form-control" id="email" name="email" required>
+          </div>
+          <div class="mb-3">
+            <label for="password" class="form-label">Contraseña</label>
+            <input type="password" class="form-control" id="password" name="password">
+            <small class="text-muted">Deja en blanco para mantener la contraseña actual (en caso de edición)</small>
+          </div>
+          <div class="mb-3">
+            <label for="role" class="form-label">Rol</label>
+            <select class="form-control" id="role" name="role">
+              <option value="user">Usuario</option>
+              <option value="admin">Administrador</option>
+            </select>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="guardarUsuario">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de confirmación para eliminar -->
+<div class="modal fade" id="eliminarUsuarioModal" tabindex="-1" aria-labelledby="eliminarUsuarioModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="eliminarUsuarioModalLabel">Confirmar eliminación</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        ¿Estás seguro de que deseas eliminar este usuario? Esta acción no se puede deshacer.
+        <input type="hidden" id="eliminarUsuarioId">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-danger" id="confirmarEliminar">Eliminar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Funciones para CRUD de usuarios
+  function editarUsuario(id) {
+    // Obtener datos del usuario y llenar el formulario
+    fetch(`/api/users/${id}`, {
+      headers: {
+        'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)adminToken\s*\=\s*([^;]*).*$)|^.*$/, "$1")}`
+      }
+    })
+    .then(response => response.json())
+    .then(data => {
+      document.getElementById('usuarioId').value = data._id;
+      document.getElementById('nombre').value = data.nombre;
+      document.getElementById('apellido').value = data.apellido;
+      document.getElementById('email').value = data.email;
+      document.getElementById('password').value = '';
+      document.getElementById('role').value = data.role || 'user';
+      
+      document.getElementById('nuevoUsuarioModalLabel').textContent = 'Editar Usuario';
+      
+      // Mostrar el modal
+      new bootstrap.Modal(document.getElementById('nuevoUsuarioModal')).show();
+    })
+    .catch(error => console.error('Error:', error));
+  }
+
+  function eliminarUsuario(id) {
+    document.getElementById('eliminarUsuarioId').value = id;
+    new bootstrap.Modal(document.getElementById('eliminarUsuarioModal')).show();
+  }
+
+  // Configurar eventos de los botones
+  document.addEventListener('DOMContentLoaded', function() {
+    // Guardar usuario (crear o actualizar)
+    document.getElementById('guardarUsuario').addEventListener('click', function() {
+      const usuarioId = document.getElementById('usuarioId').value;
+      const method = usuarioId ? 'PUT' : 'POST';
+      const url = usuarioId ? `/api/users/${usuarioId}` : '/api/users';
+      
+      const userData = {
+        nombre: document.getElementById('nombre').value,
+        apellido: document.getElementById('apellido').value,
+        email: document.getElementById('email').value,
+        role: document.getElementById('role').value
+      };
+      
+      // Solo incluir contraseña si se ha ingresado una
+      const password = document.getElementById('password').value;
+      if (password) {
+        userData.password = password;
+      }
+      
+      fetch(url, {
+        method: method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)adminToken\s*\=\s*([^;]*).*$)|^.*$/, "$1")}`
+        },
+        body: JSON.stringify(userData)
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Error en la solicitud');
+        }
+        return response.json();
+      })
+      .then(() => {
+        // Cerrar modal y recargar página
+        bootstrap.Modal.getInstance(document.getElementById('nuevoUsuarioModal')).hide();
+        window.location.reload();
+      })
+      .catch(error => {
+        alert('Error al guardar usuario: ' + error.message);
+      });
+    });
+    
+    // Confirmar eliminación
+    document.getElementById('confirmarEliminar').addEventListener('click', function() {
+      const usuarioId = document.getElementById('eliminarUsuarioId').value;
+      
+      fetch(`/api/users/${usuarioId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)adminToken\s*\=\s*([^;]*).*$)|^.*$/, "$1")}`
+        }
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Error en la solicitud');
+        }
+        return response.json();
+      })
+      .then(() => {
+        bootstrap.Modal.getInstance(document.getElementById('eliminarUsuarioModal')).hide();
+        window.location.reload();
+      })
+      .catch(error => {
+        alert('Error al eliminar usuario: ' + error.message);
+      });
+    });
+    
+    // Limpiar formulario al abrir modal de nuevo usuario
+    document.getElementById('nuevoUsuarioModal').addEventListener('show.bs.modal', function(event) {
+      if (!event.relatedTarget.classList.contains('btn-warning')) {
+        document.getElementById('usuarioForm').reset();
+        document.getElementById('usuarioId').value = '';
+        document.getElementById('nuevoUsuarioModalLabel').textContent = 'Nuevo Usuario';
+      }
+    });
+  });
+</script>
+` }) %>

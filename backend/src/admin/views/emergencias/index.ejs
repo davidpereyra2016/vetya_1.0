@@ -1,0 +1,517 @@
+<%- include('../layout', { title: 'Gestión de Emergencias', body: `
+<div class="container-fluid py-4">
+  <% if (typeof error !== 'undefined') { %>
+    <div class="alert alert-danger" role="alert">
+      <%= error %>
+    </div>
+  <% } %>
+  
+  <div class="card shadow mb-4">
+    <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+      <h6 class="m-0 font-weight-bold text-primary">Listado de Emergencias</h6>
+      <div>
+        <button class="btn btn-success btn-sm me-2" id="btnEmergenciasActivas">
+          <i class="fas fa-clock fa-sm"></i> Emergencias Activas
+        </button>
+        <button class="btn btn-info btn-sm me-2" id="btnTodasEmergencias">
+          <i class="fas fa-list fa-sm"></i> Todas las Emergencias
+        </button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="alert alert-info mb-4">
+        <i class="fas fa-info-circle me-2"></i> Importante: Las distancias mostradas a los prestadores incluyen un radio de privacidad de 1km para proteger la ubicación exacta del cliente. Las distancias nunca se muestran como menores a 1km y los tiempos de viaje se calculan con una velocidad promedio urbana de 30km/h.
+      </div>
+      
+      <div class="table-responsive">
+        <table class="table table-bordered" id="dataTable" width="100%" cellspacing="0">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Cliente</th>
+              <th>Mascota</th>
+              <th>Descripción</th>
+              <th>Ubicación</th>
+              <th>Estado</th>
+              <th>Prestador Asignado</th>
+              <th>Fecha</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (emergencias && emergencias.length > 0) { %>
+              <% emergencias.forEach(emergencia => { %>
+                <tr class="<%= emergencia.estado === 'activa' ? 'table-danger' : (emergencia.estado === 'en_proceso' ? 'table-warning' : '') %>">
+                  <td><%= emergencia._id %></td>
+                  <td>
+                    <% if (emergencia.cliente && emergencia.cliente.nombre) { %>
+                      <%= emergencia.cliente.nombre %> <%= emergencia.cliente.apellido %>
+                    <% } else { %>
+                      Cliente #<%= emergencia.clienteId %>
+                    <% } %>
+                  </td>
+                  <td>
+                    <% if (emergencia.mascota && emergencia.mascota.nombre) { %>
+                      <%= emergencia.mascota.nombre %> 
+                      (<%= emergencia.mascota.especie || 'No especificada' %>)
+                    <% } else { %>
+                      Mascota #<%= emergencia.mascotaId %>
+                    <% } %>
+                  </td>
+                  <td>
+                    <span class="d-inline-block text-truncate" style="max-width: 150px;">
+                      <%= emergencia.descripcion %>
+                    </span>
+                  </td>
+                  <td>
+                    <% if (emergencia.ubicacion && emergencia.ubicacion.direccion) { %>
+                      <%= emergencia.ubicacion.direccion %>
+                      <% if (emergencia.ubicacion.coordenadas) { %>
+                        <a href="https://www.google.com/maps?q=<%= emergencia.ubicacion.coordenadas[1] %>,<%= emergencia.ubicacion.coordenadas[0] %>" target="_blank" class="text-primary ms-2">
+                          <i class="fas fa-map-marker-alt"></i>
+                        </a>
+                      <% } %>
+                    <% } else { %>
+                      No especificada
+                    <% } %>
+                  </td>
+                  <td>
+                    <span class="badge <%= emergencia.estado === 'activa' ? 'bg-danger' : (emergencia.estado === 'en_proceso' ? 'bg-warning' : (emergencia.estado === 'completada' ? 'bg-success' : 'bg-secondary')) %>">
+                      <%= emergencia.estado === 'activa' ? 'Activa' : (emergencia.estado === 'en_proceso' ? 'En proceso' : (emergencia.estado === 'completada' ? 'Completada' : 'Cancelada')) %>
+                    </span>
+                  </td>
+                  <td>
+                    <% if (emergencia.prestador && emergencia.prestador.nombre) { %>
+                      <%= emergencia.prestador.nombre %> <%= emergencia.prestador.apellido %>
+                    <% } else if (emergencia.prestadorId) { %>
+                      Prestador #<%= emergencia.prestadorId %>
+                    <% } else { %>
+                      No asignado
+                      <% if (emergencia.estado === 'activa') { %>
+                        <button class="btn btn-sm btn-outline-primary ms-2" onclick="asignarPrestador('<%= emergencia._id %>')">
+                          <i class="fas fa-user-md"></i> Asignar
+                        </button>
+                      <% } %>
+                    <% } %>
+                  </td>
+                  <td><%= new Date(emergencia.createdAt).toLocaleDateString() %> <%= new Date(emergencia.createdAt).toLocaleTimeString() %></td>
+                  <td>
+                    <div class="btn-group" role="group">
+                      <button class="btn btn-info btn-sm" onclick="verEmergencia('<%= emergencia._id %>')">
+                        <i class="fas fa-eye"></i>
+                      </button>
+                      <% if (emergencia.estado === 'activa' || emergencia.estado === 'en_proceso') { %>
+                        <% if (emergencia.estado === 'activa') { %>
+                          <button class="btn btn-warning btn-sm" onclick="cambiarEstado('<%= emergencia._id %>', 'en_proceso')">
+                            <i class="fas fa-play"></i>
+                          </button>
+                        <% } else { %>
+                          <button class="btn btn-warning btn-sm" onclick="cambiarEstado('<%= emergencia._id %>', 'completada')">
+                            <i class="fas fa-check"></i>
+                          </button>
+                        <% } %>
+                        <button class="btn btn-danger btn-sm" onclick="cambiarEstado('<%= emergencia._id %>', 'cancelada')">
+                          <i class="fas fa-times"></i>
+                        </button>
+                      <% } %>
+                    </div>
+                  </td>
+                </tr>
+              <% }); %>
+            <% } else { %>
+              <tr>
+                <td colspan="9" class="text-center">No hay emergencias registradas</td>
+              </tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal para asignar prestador -->
+<div class="modal fade" id="asignarPrestadorModal" tabindex="-1" aria-labelledby="asignarPrestadorModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="asignarPrestadorModalLabel">Asignar Prestador a Emergencia</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="emergenciaId">
+        
+        <div class="mb-3">
+          <label for="prestadorSelect" class="form-label">Seleccione un prestador disponible</label>
+          <select class="form-control" id="prestadorSelect">
+            <option value="">Cargando prestadores...</option>
+          </select>
+        </div>
+        
+        <div id="infoPrestador" class="d-none">
+          <div class="card mb-3">
+            <div class="card-body">
+              <h6 class="card-title" id="nombrePrestador">Nombre del Prestador</h6>
+              <p class="card-text" id="especialidadPrestador">Especialidad: </p>
+              <p class="card-text" id="ubicacionPrestador">Ubicación: </p>
+              <p class="card-text" id="distanciaPrestador">Distancia estimada: </p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="confirmarAsignacion">Asignar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal para ver detalles de emergencia -->
+<div class="modal fade" id="verEmergenciaModal" tabindex="-1" aria-labelledby="verEmergenciaModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="verEmergenciaModalLabel">Detalles de la Emergencia</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row">
+          <div class="col-md-6">
+            <h6 class="fw-bold">Información de la Emergencia</h6>
+            <p><strong>Estado:</strong> <span id="detalleEstado"></span></p>
+            <p><strong>Descripción:</strong> <span id="detalleDescripcion"></span></p>
+            <p><strong>Fecha de solicitud:</strong> <span id="detalleFecha"></span></p>
+            <p><strong>Tipo de emergencia:</strong> <span id="detalleTipo"></span></p>
+            
+            <h6 class="fw-bold mt-4">Ubicación</h6>
+            <p><strong>Dirección:</strong> <span id="detalleDireccion"></span></p>
+            <p><strong>Coordenadas:</strong> <span id="detalleCoordenadas"></span></p>
+            <div id="mapaEmergencia" style="height: 200px; width: 100%; border-radius: 5px;"></div>
+          </div>
+          <div class="col-md-6">
+            <h6 class="fw-bold">Cliente</h6>
+            <p><strong>Nombre:</strong> <span id="detalleCliente"></span></p>
+            <p><strong>Teléfono:</strong> <span id="detalleTelefono"></span></p>
+            <p><strong>Email:</strong> <span id="detalleEmail"></span></p>
+            
+            <h6 class="fw-bold mt-4">Mascota</h6>
+            <p><strong>Nombre:</strong> <span id="detalleMascota"></span></p>
+            <p><strong>Especie:</strong> <span id="detalleEspecie"></span></p>
+            <p><strong>Raza:</strong> <span id="detalleRaza"></span></p>
+            <p><strong>Edad:</strong> <span id="detalleEdad"></span></p>
+            
+            <h6 class="fw-bold mt-4">Prestador Asignado</h6>
+            <div id="detallePrestadorInfo">
+              <p><strong>Nombre:</strong> <span id="detallePrestador"></span></p>
+              <p><strong>Especialidad:</strong> <span id="detallePrestadorEspecialidad"></span></p>
+              <p><strong>Teléfono:</strong> <span id="detallePrestadorTelefono"></span></p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+        <div id="botonesAccion">
+          <!-- Botones de acción según el estado -->
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Funciones para gestión de emergencias
+  function verEmergencia(id) {
+    fetch(`/api/emergencias/${id}`, {
+      headers: {
+        'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)adminToken\s*\=\s*([^;]*).*$)|^.*$/, "$1")}`
+      }
+    })
+    .then(response => response.json())
+    .then(data => {
+      // Actualizar información en el modal
+      document.getElementById('detalleEstado').innerHTML = `
+        <span class="badge \${
+          data.estado === 'activa' ? 'bg-danger' : 
+          (data.estado === 'en_proceso' ? 'bg-warning' : 
+          (data.estado === 'completada' ? 'bg-success' : 'bg-secondary'))
+        }">\${
+          data.estado === 'activa' ? 'Activa' : 
+          (data.estado === 'en_proceso' ? 'En proceso' : 
+          (data.estado === 'completada' ? 'Completada' : 'Cancelada'))
+        }</span>
+      `;
+      document.getElementById('detalleDescripcion').textContent = data.descripcion || 'No especificada';
+      document.getElementById('detalleFecha').textContent = new Date(data.createdAt).toLocaleString();
+      document.getElementById('detalleTipo').textContent = data.tipoEmergencia || 'General';
+      
+      // Ubicación
+      if (data.ubicacion) {
+        document.getElementById('detalleDireccion').textContent = data.ubicacion.direccion || 'No especificada';
+        document.getElementById('detalleCoordenadas').textContent = data.ubicacion.coordenadas ? 
+          `${data.ubicacion.coordenadas[1]}, ${data.ubicacion.coordenadas[0]}` : 'No especificadas';
+        
+        // Aquí se podría inicializar un mapa si se incluye una biblioteca de mapas
+      } else {
+        document.getElementById('detalleDireccion').textContent = 'No especificada';
+        document.getElementById('detalleCoordenadas').textContent = 'No especificadas';
+      }
+      
+      // Cliente
+      if (data.cliente) {
+        document.getElementById('detalleCliente').textContent = `${data.cliente.nombre || ''} ${data.cliente.apellido || ''}`;
+        document.getElementById('detalleTelefono').textContent = data.cliente.telefono || 'No especificado';
+        document.getElementById('detalleEmail').textContent = data.cliente.email || 'No especificado';
+      } else {
+        document.getElementById('detalleCliente').textContent = `Cliente #${data.clienteId || 'No especificado'}`;
+        document.getElementById('detalleTelefono').textContent = 'No disponible';
+        document.getElementById('detalleEmail').textContent = 'No disponible';
+      }
+      
+      // Mascota
+      if (data.mascota) {
+        document.getElementById('detalleMascota').textContent = `${data.mascota.nombre || ''} ${data.mascota.apellido || ''}`;
+        document.getElementById('detalleEspecie').textContent = data.mascota.especie || 'No especificada';
+        document.getElementById('detalleRaza').textContent = data.mascota.raza || 'No especificada';
+        document.getElementById('detalleEdad').textContent = data.mascota.edad ? `${data.mascota.edad} años` : 'No especificada';
+      } else {
+        document.getElementById('detalleMascota').textContent = `Mascota #${data.mascotaId || 'No especificada'}`;
+        document.getElementById('detalleEspecie').textContent = 'No disponible';
+        document.getElementById('detalleRaza').textContent = 'No disponible';
+        document.getElementById('detalleEdad').textContent = 'No disponible';
+      }
+      
+      // Prestador
+      if (data.prestador) {
+        document.getElementById('detallePrestador').textContent = `${data.prestador.nombre || ''} ${data.prestador.apellido || ''}`;
+        document.getElementById('detallePrestadorEspecialidad').textContent = data.prestador.especialidad || 'No especificada';
+        document.getElementById('detallePrestadorTelefono').textContent = data.prestador.telefono || 'No especificado';
+        document.getElementById('detallePrestadorInfo').style.display = 'block';
+      } else {
+        document.getElementById('detallePrestadorInfo').innerHTML = `
+          <p>No hay prestador asignado</p>
+          ${data.estado === 'activa' ? `
+            <button class="btn btn-sm btn-primary" onclick="asignarPrestador('${data._id}')">
+              <i class="fas fa-user-md me-2"></i> Asignar Prestador
+            </button>
+          ` : ''}
+        `;
+      }
+      
+      // Botones de acción según el estado
+      const botonesAccion = document.getElementById('botonesAccion');
+      botonesAccion.innerHTML = '';
+      
+      if (data.estado === 'activa' || data.estado === 'en_proceso') {
+        if (data.estado === 'activa') {
+          botonesAccion.innerHTML += `
+            <button type="button" class="btn btn-warning" onclick="cambiarEstado('${data._id}', 'en_proceso')">
+              <i class="fas fa-play me-2"></i> Marcar En Proceso
+            </button>
+          `;
+        } else {
+          botonesAccion.innerHTML += `
+            <button type="button" class="btn btn-success" onclick="cambiarEstado('${data._id}', 'completada')">
+              <i class="fas fa-check me-2"></i> Marcar Completada
+            </button>
+          `;
+        }
+        
+        botonesAccion.innerHTML += `
+          <button type="button" class="btn btn-danger ms-2" onclick="cambiarEstado('${data._id}', 'cancelada')">
+            <i class="fas fa-times me-2"></i> Cancelar Emergencia
+          </button>
+        `;
+      }
+      
+      // Mostrar el modal
+      new bootstrap.Modal(document.getElementById('verEmergenciaModal')).show();
+    })
+    .catch(error => console.error('Error:', error));
+  }
+
+  function asignarPrestador(emergenciaId) {
+    document.getElementById('emergenciaId').value = emergenciaId;
+    
+    // Cargar prestadores disponibles
+    fetch('/api/prestadores?disponible=true', {
+      headers: {
+        'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)adminToken\s*\=\s*([^;]*).*$)|^.*$/, "$1")}`
+      }
+    })
+    .then(response => response.json())
+    .then(data => {
+      const select = document.getElementById('prestadorSelect');
+      select.innerHTML = '';
+      
+      if (data.length === 0) {
+        select.innerHTML = '<option value="">No hay prestadores disponibles</option>';
+      } else {
+        select.innerHTML = '<option value="">Seleccione un prestador</option>';
+        
+        data.forEach(prestador => {
+          select.innerHTML += `
+            <option value="${prestador._id}" 
+              data-nombre="${prestador.nombre} ${prestador.apellido}"
+              data-especialidad="${prestador.especialidad || 'No especificada'}"
+              data-ubicacion="${prestador.ubicacion?.direccion || 'No especificada'}"
+              data-lat="${prestador.ubicacion?.coordenadas?.[1] || ''}"
+              data-lng="${prestador.ubicacion?.coordenadas?.[0] || ''}"
+            >
+              ${prestador.nombre} ${prestador.apellido} - ${prestador.especialidad || 'Sin especialidad'}
+            </option>
+          `;
+        });
+      }
+      
+      // Mostrar el modal
+      new bootstrap.Modal(document.getElementById('asignarPrestadorModal')).show();
+    })
+    .catch(error => console.error('Error:', error));
+  }
+
+  function cambiarEstado(emergenciaId, nuevoEstado) {
+    fetch(`/api/emergencias/${emergenciaId}/estado`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)adminToken\s*\=\s*([^;]*).*$)|^.*$/, "$1")}`
+      },
+      body: JSON.stringify({ estado: nuevoEstado })
+    })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error('Error al cambiar el estado');
+      }
+      return response.json();
+    })
+    .then(() => {
+      // Cerrar modal si está abierto
+      const modal = document.getElementById('verEmergenciaModal');
+      if (modal && bootstrap.Modal.getInstance(modal)) {
+        bootstrap.Modal.getInstance(modal).hide();
+      }
+      
+      // Recargar la página para actualizar la lista
+      window.location.reload();
+    })
+    .catch(error => {
+      alert('Error: ' + error.message);
+    });
+  }
+
+  // Configurar eventos cuando el DOM esté cargado
+  document.addEventListener('DOMContentLoaded', function() {
+    // Filtrar emergencias activas
+    document.getElementById('btnEmergenciasActivas').addEventListener('click', function() {
+      window.location.href = '/admin/emergencias?estado=activa,en_proceso';
+    });
+    
+    // Mostrar todas las emergencias
+    document.getElementById('btnTodasEmergencias').addEventListener('click', function() {
+      window.location.href = '/admin/emergencias';
+    });
+    
+    // Evento para mostrar información del prestador seleccionado
+    const prestadorSelect = document.getElementById('prestadorSelect');
+    if (prestadorSelect) {
+      prestadorSelect.addEventListener('change', function() {
+        const selectedOption = this.options[this.selectedIndex];
+        const infoPrestador = document.getElementById('infoPrestador');
+        
+        if (this.value) {
+          // Mostrar información del prestador seleccionado
+          document.getElementById('nombrePrestador').textContent = selectedOption.dataset.nombre;
+          document.getElementById('especialidadPrestador').textContent = 'Especialidad: ' + selectedOption.dataset.especialidad;
+          document.getElementById('ubicacionPrestador').textContent = 'Ubicación: ' + selectedOption.dataset.ubicacion;
+          
+          // Obtener emergencia para calcular distancia
+          const emergenciaId = document.getElementById('emergenciaId').value;
+          
+          fetch(`/api/emergencias/${emergenciaId}`, {
+            headers: {
+              'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)adminToken\s*\=\s*([^;]*).*$)|^.*$/, "$1")}`
+            }
+          })
+          .then(response => response.json())
+          .then(emergencia => {
+            if (emergencia.ubicacion?.coordenadas && selectedOption.dataset.lat && selectedOption.dataset.lng) {
+              // Calcular distancia (esto es un ejemplo, en realidad deberías usar una fórmula de distancia real)
+              const distancia = calcularDistancia(
+                emergencia.ubicacion.coordenadas[1], 
+                emergencia.ubicacion.coordenadas[0],
+                selectedOption.dataset.lat,
+                selectedOption.dataset.lng
+              );
+              
+              // Aplicar radio de privacidad (mínimo 1km)
+              const distanciaConPrivacidad = Math.max(1, distancia);
+              const tiempoEstimado = Math.ceil(distanciaConPrivacidad / 30 * 60); // 30km/h en minutos
+              
+              document.getElementById('distanciaPrestador').textContent = 
+                `Distancia estimada: ${distanciaConPrivacidad.toFixed(1)} km (aprox. ${tiempoEstimado} min)`;
+            } else {
+              document.getElementById('distanciaPrestador').textContent = 'Distancia estimada: No disponible';
+            }
+          });
+          
+          infoPrestador.classList.remove('d-none');
+        } else {
+          infoPrestador.classList.add('d-none');
+        }
+      });
+    }
+    
+    // Confirmar asignación de prestador
+    const confirmarAsignacion = document.getElementById('confirmarAsignacion');
+    if (confirmarAsignacion) {
+      confirmarAsignacion.addEventListener('click', function() {
+        const emergenciaId = document.getElementById('emergenciaId').value;
+        const prestadorId = document.getElementById('prestadorSelect').value;
+        
+        if (!prestadorId) {
+          alert('Por favor, seleccione un prestador');
+          return;
+        }
+        
+        fetch(`/api/emergencias/${emergenciaId}/asignar`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)adminToken\s*\=\s*([^;]*).*$)|^.*$/, "$1")}`
+          },
+          body: JSON.stringify({ prestadorId })
+        })
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('Error al asignar prestador');
+          }
+          return response.json();
+        })
+        .then(() => {
+          bootstrap.Modal.getInstance(document.getElementById('asignarPrestadorModal')).hide();
+          window.location.reload();
+        })
+        .catch(error => {
+          alert('Error: ' + error.message);
+        });
+      });
+    }
+  });
+
+  // Función para calcular distancia entre dos puntos (fórmula haversine)
+  function calcularDistancia(lat1, lon1, lat2, lon2) {
+    const R = 6371; // Radio de la Tierra en km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const distance = R * c; // Distancia en km
+    return distance;
+  }
+</script>
+` }) %>

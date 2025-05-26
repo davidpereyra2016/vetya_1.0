@@ -65,21 +65,91 @@ router.get("/activas", protectRoute, async (req, res) => {
   }
 });
 
+// Obtener emergencias asignadas al veterinario autenticado
+router.get("/asignadas", protectRoute, async (req, res) => {
+  try {
+    // Verificar que el usuario sea un prestador de tipo veterinario
+    const prestador = await Prestador.findOne({ usuario: req.user._id });
+    
+    if (!prestador || prestador.tipo !== "Veterinario") {
+      return res.status(403).json({ message: "Solo los veterinarios pueden acceder a emergencias asignadas" });
+    }
+    
+    // Obtener todas las emergencias asignadas a este veterinario
+    const emergencias = await Emergencia.find({
+      veterinario: prestador._id,
+      estado: { $in: ["Asignada", "En camino", "Atendida"] }
+    })
+      .populate("mascota", "nombre tipo raza imagen edad genero color")
+      .populate("usuario", "username telefono email profilePicture")
+      .sort({ fechaAsignacion: -1 });
+    
+    console.log(`Encontradas ${emergencias.length} emergencias asignadas al veterinario ${prestador._id}`);
+    res.status(200).json(emergencias);
+  } catch (error) {
+    console.log("Error al obtener emergencias asignadas:", error);
+    res.status(500).json({ message: "Error al obtener emergencias asignadas" });
+  }
+});
+
 // Obtener una emergencia por ID
 router.get("/:id", protectRoute, async (req, res) => {
   try {
-    const emergencia = await Emergencia.findById(req.params.id)
-      .populate("mascota", "nombre tipo raza imagen edad genero color")
-      .populate("veterinario", "nombre especialidad imagen rating experiencia ubicacion telefono email");
+    console.log('Solicitud de emergencia por ID:', req.params.id, 'Usuario:', req.user._id);
     
-    if (!emergencia) {
+    // Buscamos primero al prestador si el usuario es un prestador (veterinario)
+    let prestador = null;
+    try {
+      prestador = await Prestador.findOne({ usuario: req.user._id });
+      console.log('Prestador encontrado:', prestador ? prestador._id : 'No es prestador');
+    } catch (err) {
+      console.log('Error al buscar prestador:', err);
+    }
+    
+    // Primero obtenemos la emergencia sin populate para verificar permisos
+    const emergenciaBase = await Emergencia.findById(req.params.id);
+    
+    if (!emergenciaBase) {
       return res.status(404).json({ message: "Emergencia no encontrada" });
     }
     
-    // Verificar si el usuario actual es el propietario
-    if (emergencia.usuario.toString() !== req.user._id.toString()) {
+    // Verificar si el usuario actual es el propietario o el veterinario asignado
+    const esCliente = emergenciaBase.usuario.toString() === req.user._id.toString();
+    // Si es prestador, verificamos si el ID del prestador coincide con el veterinario asignado
+    const esVeterinarioAsignado = prestador && emergenciaBase.veterinario && 
+      emergenciaBase.veterinario.toString() === prestador._id.toString();
+    
+    console.log('Verificando permisos detallados:', {
+      usuarioId: req.user._id,
+      prestadorId: prestador ? prestador._id : null,
+      esCliente,
+      esVeterinarioAsignado,
+      usuarioEmergencia: emergenciaBase.usuario.toString(),
+      veterinarioEmergencia: emergenciaBase.veterinario ? emergenciaBase.veterinario.toString() : null
+    });
+    
+    if (!esCliente && !esVeterinarioAsignado) {
+      console.log('Acceso denegado - No es cliente ni veterinario asignado');
       return res.status(401).json({ message: "No autorizado para ver esta emergencia" });
     }
+    
+    // Si está autorizado, ahora obtenemos la emergencia con todos los datos populados
+    const emergencia = await Emergencia.findById(req.params.id)
+      .populate("mascota", "nombre tipo raza imagen edad genero color")
+      .populate("usuario", "username email profilePicture telefono")
+      .populate({
+        path: "veterinario",
+        model: "Prestador",
+        select: "nombre especialidad imagen rating experiencia ubicacion telefono email"
+      });
+    
+    console.log('Emergencia enviada al cliente:', {
+      id: emergencia._id,
+      estado: emergencia.estado,
+      mascota: emergencia.mascota ? emergencia.mascota.nombre : null,
+      usuario: emergencia.usuario ? emergencia.usuario.email : null,
+      veterinario: emergencia.veterinario ? emergencia.veterinario.nombre : null
+    });
     
     res.status(200).json(emergencia);
   } catch (error) {
@@ -429,6 +499,168 @@ router.post("/cercanas", protectRoute, async (req, res) => {
   } catch (error) {
     console.log(error);
     res.status(500).json({ message: "Error al obtener emergencias cercanas" });
+  }
+});
+
+// Obtener emergencias cercanas disponibles para el veterinario (endpoint especial para la app de veterinarios)
+router.get("/cercanas/disponibles", protectRoute, async (req, res) => {
+  try {
+    // Verificar que el usuario sea un prestador de tipo veterinario
+    const prestador = await Prestador.findOne({ usuario: req.user._id });
+    
+    if (!prestador || prestador.tipo !== "Veterinario") {
+      return res.status(403).json({ message: "Solo los veterinarios pueden acceder a emergencias cercanas" });
+    }
+    
+    // Obtener ubicación del veterinario
+    if (!prestador.ubicacion || !prestador.ubicacion.coordenadas) {
+      return res.status(400).json({ message: "El veterinario no tiene ubicación registrada" });
+    }
+    
+    const lat = prestador.ubicacion.coordenadas.lat;
+    const lng = prestador.ubicacion.coordenadas.lng;
+    
+    // Buscar emergencias solicitadas cercanas a la ubicación del veterinario
+    const emergencias = await Emergencia.find({
+      estado: "Solicitada",
+      "ubicacion.coordenadas": {
+        $near: {
+          $geometry: {
+            type: "Point",
+            coordinates: [lng, lat]
+          },
+          $maxDistance: 10000 // 10km por defecto
+        }
+      }
+    })
+      .populate("mascota", "nombre tipo raza imagen")
+      .populate("usuario", "nombre telefono")
+      .sort({ fechaSolicitud: -1 })
+      .limit(10); // Limitar a 10 emergencias para no sobrecargar
+    
+    // Añadir información de distancia para cada emergencia
+    const emergenciasConDistancia = emergencias.map(emergencia => {
+      const emergenciaObj = emergencia.toObject();
+      const distancia = calcularDistancia(
+        lat,
+        lng,
+        emergencia.ubicacion.coordenadas.lat,
+        emergencia.ubicacion.coordenadas.lng
+      );
+      
+      // Aplicar radio de privacidad de 1km
+      const distanciaAjustada = Math.max(distancia, 1.0);
+      
+      // Calcular tiempo estimado basado en velocidad promedio de 30km/h
+      const tiempoEstimado = Math.ceil(distanciaAjustada / 30 * 60); // en minutos
+      
+      return {
+        ...emergenciaObj,
+        distancia: distanciaAjustada,
+        tiempoEstimado: tiempoEstimado
+      };
+    });
+    
+    console.log(`Encontradas ${emergenciasConDistancia.length} emergencias cercanas disponibles para el veterinario ${prestador._id}`);
+    res.status(200).json(emergenciasConDistancia);
+  } catch (error) {
+    console.log("Error al obtener emergencias cercanas disponibles:", error);
+    res.status(500).json({ message: "Error al obtener emergencias cercanas disponibles" });
+  }
+});
+
+// Aceptar una emergencia (ruta para veterinarios)
+router.post("/:id/aceptar", protectRoute, async (req, res) => {
+  try {
+    // Validación de ID
+    if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) {
+      console.log(`ID de emergencia inválido: ${req.params.id}`);
+      return res.status(400).json({ message: "ID de emergencia inválido" });
+    }
+    
+    // Buscar emergencia
+    const emergencia = await Emergencia.findById(req.params.id);
+    
+    if (!emergencia) {
+      console.log(`Emergencia no encontrada con ID: ${req.params.id}`);
+      return res.status(404).json({ message: "Emergencia no encontrada" });
+    }
+    
+    // Verificar que el prestador (veterinario) exista
+    const prestador = await Prestador.findOne({ usuario: req.user._id });
+    if (!prestador || prestador.tipo !== "Veterinario") {
+      return res.status(403).json({ message: "Solo los veterinarios pueden aceptar emergencias" });
+    }
+    
+    // Verificar que el veterinario que acepta sea el asignado a la emergencia
+    if (emergencia.veterinario && emergencia.veterinario.toString() !== prestador._id.toString()) {
+      return res.status(403).json({ message: "No autorizado: solo el veterinario asignado puede actualizar esta emergencia" });
+    }
+    
+    // Cambiar estado a "En camino"
+    emergencia.estado = "En camino";
+    emergencia.fechaEnCamino = new Date();
+    
+    await emergencia.save();
+    
+    const emergenciaActualizada = await Emergencia.findById(emergencia._id)
+      .populate("mascota", "nombre tipo raza imagen edad genero color")
+      .populate("usuario", "nombre email telefono")
+      .populate("veterinario", "nombre especialidad imagen rating");
+    
+    console.log(`Emergencia ${emergencia._id} aceptada por el veterinario ${prestador._id} y puesta en camino`);
+    res.status(200).json(emergenciaActualizada);
+  } catch (error) {
+    console.error(`Error al aceptar emergencia: ${error.message}`, error);
+    res.status(500).json({ message: "Error al aceptar la emergencia" });
+  }
+});
+
+// Rechazar una emergencia (ruta para veterinarios)
+router.post("/:id/rechazar", protectRoute, async (req, res) => {
+  try {
+    // Validación de ID
+    if (!req.params.id || !mongoose.Types.ObjectId.isValid(req.params.id)) {
+      console.log(`ID de emergencia inválido: ${req.params.id}`);
+      return res.status(400).json({ message: "ID de emergencia inválido" });
+    }
+    
+    // Buscar emergencia
+    const emergencia = await Emergencia.findById(req.params.id);
+    
+    if (!emergencia) {
+      console.log(`Emergencia no encontrada con ID: ${req.params.id}`);
+      return res.status(404).json({ message: "Emergencia no encontrada" });
+    }
+    
+    // Verificar que el prestador (veterinario) exista
+    const prestador = await Prestador.findOne({ usuario: req.user._id });
+    if (!prestador || prestador.tipo !== "Veterinario") {
+      return res.status(403).json({ message: "Solo los veterinarios pueden rechazar emergencias" });
+    }
+    
+    // Verificar que el veterinario que rechaza sea el asignado a la emergencia
+    if (emergencia.veterinario && emergencia.veterinario.toString() !== prestador._id.toString()) {
+      return res.status(403).json({ message: "No autorizado: solo el veterinario asignado puede actualizar esta emergencia" });
+    }
+    
+    // Cambiar estado a "Cancelada"
+    emergencia.estado = "Cancelada";
+    emergencia.fechaCancelacion = new Date();
+    emergencia.motivoCancelacion = "Rechazada por el veterinario";
+    
+    await emergencia.save();
+    
+    const emergenciaActualizada = await Emergencia.findById(emergencia._id)
+      .populate("mascota", "nombre tipo raza imagen")
+      .populate("usuario", "nombre email telefono")
+      .populate("veterinario", "nombre especialidad imagen rating");
+    
+    console.log(`Emergencia ${emergencia._id} rechazada por el veterinario ${prestador._id} y marcada como cancelada`);
+    res.status(200).json(emergenciaActualizada);
+  } catch (error) {
+    console.error(`Error al rechazar emergencia: ${error.message}`, error);
+    res.status(500).json({ message: "Error al rechazar la emergencia" });
   }
 });
 

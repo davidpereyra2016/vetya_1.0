@@ -244,8 +244,9 @@ router.post("/login", async (req, res) => {
             return res.status(400).json({message: "Email y contraseña son obligatorios"});
         }
         
-        // Añadir validación de appType - esto es crucial para la seguridad
-        if(!appType || !['client', 'provider'].includes(appType)){
+        // Añadir validación de appType - solo es necesario para aplicaciones cliente y proveedor
+        // Para el panel admin no se requiere appType
+        if(appType && !['client', 'provider', 'admin'].includes(appType)){
             return res.status(400).json({message: "Tipo de aplicación inválido"});
         }
         
@@ -263,10 +264,13 @@ router.post("/login", async (req, res) => {
         
         // Verificar que el rol del usuario coincida con el tipo de aplicación
         // Esta es la clave para prevenir acceso no autorizado entre apps
-        if ((appType === 'client' && user.role !== 'client') || 
-            (appType === 'provider' && user.role !== 'provider')) {
+        // Pero permitimos acceso a administradores desde el panel admin
+        if (appType && 
+            ((appType === 'client' && user.role !== 'client') || 
+             (appType === 'provider' && user.role !== 'provider') ||
+             (appType === 'admin' && user.role !== 'admin'))) {
             return res.status(403).json({
-                message: `No tiene permiso para acceder como ${appType === 'client' ? 'cliente' : 'prestador'}`
+                message: `No tiene permiso para acceder como ${appType === 'client' ? 'cliente' : (appType === 'provider' ? 'prestador' : 'administrador')}`
             });
         }
         

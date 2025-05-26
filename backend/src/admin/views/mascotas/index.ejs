@@ -1,0 +1,395 @@
+<%- include('../layout', { title: 'Gestión de Mascotas', body: `
+<div class="container-fluid py-4">
+  <% if (typeof error !== 'undefined') { %>
+    <div class="alert alert-danger" role="alert">
+      <%= error %>
+    </div>
+  <% } %>
+  
+  <div class="card shadow mb-4">
+    <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+      <h6 class="m-0 font-weight-bold text-primary">Listado de Mascotas</h6>
+      <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#nuevaMascotaModal">
+        <i class="fas fa-plus fa-sm"></i> Nueva Mascota
+      </button>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-bordered" id="dataTable" width="100%" cellspacing="0">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Nombre</th>
+              <th>Especie</th>
+              <th>Raza</th>
+              <th>Edad</th>
+              <th>Propietario</th>
+              <th>Última visita</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (mascotas && mascotas.length > 0) { %>
+              <% mascotas.forEach(mascota => { %>
+                <tr>
+                  <td><%= mascota._id %></td>
+                  <td>
+                    <% if (mascota.foto) { %>
+                      <img src="<%= mascota.foto %>" alt="Foto" class="rounded-circle me-2" style="width: 30px; height: 30px; object-fit: cover;">
+                    <% } %>
+                    <%= mascota.nombre %>
+                  </td>
+                  <td><%= mascota.especie || 'No especificada' %></td>
+                  <td><%= mascota.raza || 'No especificada' %></td>
+                  <td><%= mascota.edad ? `${mascota.edad} años` : 'No especificada' %></td>
+                  <td>
+                    <% if (mascota.propietario && mascota.propietario.nombre) { %>
+                      <%= mascota.propietario.nombre %> <%= mascota.propietario.apellido %>
+                    <% } else if (mascota.propietarioId) { %>
+                      Usuario #<%= mascota.propietarioId %>
+                    <% } else { %>
+                      No especificado
+                    <% } %>
+                  </td>
+                  <td>
+                    <% if (mascota.ultimaVisita) { %>
+                      <%= new Date(mascota.ultimaVisita).toLocaleDateString() %>
+                    <% } else { %>
+                      Sin visitas
+                    <% } %>
+                  </td>
+                  <td>
+                    <button class="btn btn-info btn-sm" onclick="verMascota('<%= mascota._id %>')">
+                      <i class="fas fa-eye"></i>
+                    </button>
+                    <button class="btn btn-warning btn-sm" onclick="editarMascota('<%= mascota._id %>')">
+                      <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="btn btn-danger btn-sm" onclick="eliminarMascota('<%= mascota._id %>')">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </td>
+                </tr>
+              <% }); %>
+            <% } else { %>
+              <tr>
+                <td colspan="8" class="text-center">No hay mascotas registradas</td>
+              </tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal para crear/editar mascota -->
+<div class="modal fade" id="nuevaMascotaModal" tabindex="-1" aria-labelledby="nuevaMascotaModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="nuevaMascotaModalLabel">Nueva Mascota</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <form id="mascotaForm">
+          <input type="hidden" id="mascotaId">
+          
+          <div class="mb-3">
+            <label for="nombre" class="form-label">Nombre</label>
+            <input type="text" class="form-control" id="nombre" name="nombre" required>
+          </div>
+          
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label for="especie" class="form-label">Especie</label>
+              <select class="form-control" id="especie" name="especie">
+                <option value="">Seleccionar especie</option>
+                <option value="Perro">Perro</option>
+                <option value="Gato">Gato</option>
+                <option value="Ave">Ave</option>
+                <option value="Reptil">Reptil</option>
+                <option value="Roedor">Roedor</option>
+                <option value="Pez">Pez</option>
+                <option value="Otro">Otro</option>
+              </select>
+            </div>
+            <div class="col-md-6 mb-3">
+              <label for="raza" class="form-label">Raza</label>
+              <input type="text" class="form-control" id="raza" name="raza">
+            </div>
+          </div>
+          
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label for="edad" class="form-label">Edad (años)</label>
+              <input type="number" step="0.1" class="form-control" id="edad" name="edad">
+            </div>
+            <div class="col-md-6 mb-3">
+              <label for="sexo" class="form-label">Sexo</label>
+              <select class="form-control" id="sexo" name="sexo">
+                <option value="">Seleccionar sexo</option>
+                <option value="Macho">Macho</option>
+                <option value="Hembra">Hembra</option>
+              </select>
+            </div>
+          </div>
+          
+          <div class="mb-3">
+            <label for="color" class="form-label">Color</label>
+            <input type="text" class="form-control" id="color" name="color">
+          </div>
+          
+          <div class="mb-3">
+            <label for="peso" class="form-label">Peso (kg)</label>
+            <input type="number" step="0.01" class="form-control" id="peso" name="peso">
+          </div>
+          
+          <div class="mb-3">
+            <label for="fechaNacimiento" class="form-label">Fecha de Nacimiento</label>
+            <input type="date" class="form-control" id="fechaNacimiento" name="fechaNacimiento">
+          </div>
+          
+          <div class="mb-3">
+            <label for="propietarioId" class="form-label">Propietario</label>
+            <select class="form-control" id="propietarioId" name="propietarioId">
+              <option value="">Cargando propietarios...</option>
+            </select>
+          </div>
+          
+          <div class="mb-3">
+            <label for="foto" class="form-label">URL de foto</label>
+            <input type="url" class="form-control" id="foto" name="foto">
+          </div>
+          
+          <div class="mb-3">
+            <label for="condicionesMedicas" class="form-label">Condiciones Médicas</label>
+            <textarea class="form-control" id="condicionesMedicas" name="condicionesMedicas" rows="2"></textarea>
+          </div>
+          
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="esterilizado" name="esterilizado">
+            <label class="form-check-label" for="esterilizado">
+              Esterilizado/a
+            </label>
+          </div>
+          
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="microchip" name="microchip">
+            <label class="form-check-label" for="microchip">
+              Tiene microchip
+            </label>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="guardarMascota">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de confirmación para eliminar -->
+<div class="modal fade" id="eliminarMascotaModal" tabindex="-1" aria-labelledby="eliminarMascotaModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="eliminarMascotaModalLabel">Confirmar eliminación</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        ¿Estás seguro de que deseas eliminar esta mascota? Esta acción no se puede deshacer y eliminará todos los registros asociados.
+        <input type="hidden" id="eliminarMascotaId">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-danger" id="confirmarEliminar">Eliminar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Funciones para CRUD de mascotas
+  function verMascota(id) {
+    window.location.href = '/admin/mascotas/' + id;
+  }
+  
+  function editarMascota(id) {
+    // Cargar propietarios
+    cargarPropietarios();
+    
+    // Obtener datos de la mascota y llenar el formulario
+    fetch(\`/api/mascotas/\${id}\`, {
+      headers: {
+        'Authorization': 'Bearer ' + obtenerToken()
+      }
+    })
+    .then(response => response.json())
+    .then(data => {
+      document.getElementById('mascotaId').value = data._id;
+      document.getElementById('nombre').value = data.nombre || '';
+      document.getElementById('especie').value = data.especie || '';
+      document.getElementById('raza').value = data.raza || '';
+      document.getElementById('edad').value = data.edad || '';
+      document.getElementById('sexo').value = data.sexo || '';
+      document.getElementById('color').value = data.color || '';
+      document.getElementById('peso').value = data.peso || '';
+      
+      if (data.fechaNacimiento) {
+        const fecha = new Date(data.fechaNacimiento);
+        document.getElementById('fechaNacimiento').value = fecha.toISOString().split('T')[0];
+      }
+      
+      // Establecer propietario después de cargarse la lista
+      if (data.propietarioId) {
+        const interval = setInterval(() => {
+          const select = document.getElementById('propietarioId');
+          if (select.options.length > 1) {
+            select.value = data.propietarioId;
+            clearInterval(interval);
+          }
+        }, 100);
+      }
+      
+      document.getElementById('foto').value = data.foto || '';
+      document.getElementById('condicionesMedicas').value = data.condicionesMedicas || '';
+      document.getElementById('esterilizado').checked = data.esterilizado || false;
+      document.getElementById('microchip').checked = data.microchip || false;
+      
+      document.getElementById('nuevaMascotaModalLabel').textContent = 'Editar Mascota';
+      
+      // Mostrar el modal
+      new bootstrap.Modal(document.getElementById('nuevaMascotaModal')).show();
+    })
+    .catch(error => console.error('Error:', error));
+  }
+
+  function eliminarMascota(id) {
+    document.getElementById('eliminarMascotaId').value = id;
+    new bootstrap.Modal(document.getElementById('eliminarMascotaModal')).show();
+  }
+  
+  // Función para cargar propietarios en el select
+  function cargarPropietarios() {
+    const select = document.getElementById('propietarioId');
+    
+    // Si ya se cargaron los propietarios, no hacer nada
+    if (select.options.length > 1) return;
+    
+    select.innerHTML = '<option value="">Cargando propietarios...</option>';
+    
+    fetch('/api/users', {
+      headers: {
+        'Authorization': 'Bearer ' + obtenerToken()
+      }
+    })
+    .then(response => response.json())
+    .then(data => {
+      select.innerHTML = '<option value="">Seleccionar propietario</option>';
+      
+      data.forEach(usuario => {
+        select.innerHTML += \`<option value="\${usuario._id}">\${usuario.nombre || ''} \${usuario.apellido || ''} (\${usuario.email})</option>\`;
+      });
+    })
+    .catch(error => {
+      console.error('Error cargando propietarios:', error);
+      select.innerHTML = '<option value="">Error al cargar propietarios</option>';
+    });
+  }
+
+  // Configurar eventos cuando el DOM esté cargado
+  document.addEventListener('DOMContentLoaded', function() {
+    // Preparar modal para nueva mascota
+    document.querySelector('[data-bs-target="#nuevaMascotaModal"]').addEventListener('click', function() {
+      cargarPropietarios();
+    });
+    
+    // Guardar mascota (crear o actualizar)
+    document.getElementById('guardarMascota').addEventListener('click', function() {
+      const mascotaId = document.getElementById('mascotaId').value;
+      const method = mascotaId ? 'PUT' : 'POST';
+      const url = mascotaId ? \`/api/mascotas/\${mascotaId}\` : '/api/mascotas';
+      
+      const mascotaData = {
+        nombre: document.getElementById('nombre').value,
+        especie: document.getElementById('especie').value,
+        raza: document.getElementById('raza').value,
+        edad: document.getElementById('edad').value ? parseFloat(document.getElementById('edad').value) : undefined,
+        sexo: document.getElementById('sexo').value,
+        color: document.getElementById('color').value,
+        peso: document.getElementById('peso').value ? parseFloat(document.getElementById('peso').value) : undefined,
+        fechaNacimiento: document.getElementById('fechaNacimiento').value || undefined,
+        propietarioId: document.getElementById('propietarioId').value || undefined,
+        foto: document.getElementById('foto').value,
+        condicionesMedicas: document.getElementById('condicionesMedicas').value,
+        esterilizado: document.getElementById('esterilizado').checked,
+        microchip: document.getElementById('microchip').checked
+      };
+      
+      fetch(url, {
+        method: method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': \`Bearer \${obtenerToken()}\`
+        },
+        body: JSON.stringify(mascotaData)
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Error en la solicitud');
+        }
+        return response.json();
+      })
+      .then(() => {
+        // Cerrar modal y recargar página
+        bootstrap.Modal.getInstance(document.getElementById('nuevaMascotaModal')).hide();
+        window.location.reload();
+      })
+      .catch(error => {
+        alert('Error al guardar mascota: ' + error.message);
+      });
+    });
+    
+    // Confirmar eliminación
+    document.getElementById('confirmarEliminar').addEventListener('click', function() {
+      const mascotaId = document.getElementById('eliminarMascotaId').value;
+      
+      fetch(\`/api/mascotas/\${mascotaId}\`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': \`Bearer \${obtenerToken()}\`
+        }
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Error en la solicitud');
+        }
+        return response.json();
+      })
+      .then(() => {
+        bootstrap.Modal.getInstance(document.getElementById('eliminarMascotaModal')).hide();
+        window.location.reload();
+      })
+      .catch(error => {
+        alert('Error al eliminar mascota: ' + error.message);
+      });
+    });
+    
+    // Limpiar formulario al abrir modal de nueva mascota
+    document.getElementById('nuevaMascotaModal').addEventListener('show.bs.modal', function(event) {
+      if (!event.relatedTarget || !event.relatedTarget.classList.contains('btn-warning')) {
+        document.getElementById('mascotaForm').reset();
+        document.getElementById('mascotaId').value = '';
+        document.getElementById('nuevaMascotaModalLabel').textContent = 'Nueva Mascota';
+      }
+    });
+  });
+  
+  // Función para obtener el token desde cookies
+  function obtenerToken() {
+    return document.cookie.replace(/(?:(?:^|.*;\s*)adminToken\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+  }
+</script>
+` }) %>

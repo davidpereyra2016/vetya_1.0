@@ -1,0 +1,296 @@
+<%- include('../layout', { title: 'Gestión de Servicios', body: `
+<div class="container-fluid py-4">
+  <% if (typeof error !== 'undefined') { %>
+    <div class="alert alert-danger" role="alert">
+      <%= error %>
+    </div>
+  <% } %>
+  
+  <div class="card shadow mb-4">
+    <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+      <h6 class="m-0 font-weight-bold text-primary">Listado de Servicios</h6>
+      <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#nuevoServicioModal">
+        <i class="fas fa-plus fa-sm"></i> Nuevo Servicio
+      </button>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-bordered" id="dataTable" width="100%" cellspacing="0">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Nombre</th>
+              <th>Categoría</th>
+              <th>Descripción</th>
+              <th>Precio Base</th>
+              <th>Prestadores</th>
+              <th>Estado</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (servicios && servicios.length > 0) { %>
+              <% servicios.forEach(servicio => { %>
+                <tr>
+                  <td><%= servicio._id %></td>
+                  <td><%= servicio.nombre %></td>
+                  <td><%= servicio.categoria || 'General' %></td>
+                  <td>
+                    <span class="d-inline-block text-truncate" style="max-width: 200px;">
+                      <%= servicio.descripcion %>
+                    </span>
+                  </td>
+                  <td>$<%= servicio.precioBase.toFixed(2) %></td>
+                  <td><%= servicio.prestadoresDisponibles || 0 %></td>
+                  <td>
+                    <span class="badge <%= servicio.activo ? 'bg-success' : 'bg-danger' %>">
+                      <%= servicio.activo ? 'Activo' : 'Inactivo' %>
+                    </span>
+                  </td>
+                  <td>
+                    <button class="btn btn-info btn-sm" onclick="verServicio('<%= servicio._id %>')">
+                      <i class="fas fa-eye"></i>
+                    </button>
+                    <button class="btn btn-warning btn-sm" onclick="editarServicio('<%= servicio._id %>')">
+                      <i class="fas fa-edit"></i>
+                    </button>
+                    <button class="btn btn-danger btn-sm" onclick="eliminarServicio('<%= servicio._id %>')">
+                      <i class="fas fa-trash"></i>
+                    </button>
+                  </td>
+                </tr>
+              <% }); %>
+            <% } else { %>
+              <tr>
+                <td colspan="8" class="text-center">No hay servicios registrados</td>
+              </tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal para crear/editar servicio -->
+<div class="modal fade" id="nuevoServicioModal" tabindex="-1" aria-labelledby="nuevoServicioModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="nuevoServicioModalLabel">Nuevo Servicio</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <form id="servicioForm">
+          <input type="hidden" id="servicioId">
+          
+          <div class="mb-3">
+            <label for="nombre" class="form-label">Nombre del servicio</label>
+            <input type="text" class="form-control" id="nombre" name="nombre" required>
+          </div>
+          
+          <div class="mb-3">
+            <label for="categoria" class="form-label">Categoría</label>
+            <select class="form-control" id="categoria" name="categoria">
+              <option value="consulta">Consulta</option>
+              <option value="cirugia">Cirugía</option>
+              <option value="vacunacion">Vacunación</option>
+              <option value="laboratorio">Análisis de laboratorio</option>
+              <option value="especializada">Atención especializada</option>
+              <option value="urgencia">Urgencia</option>
+              <option value="domicilio">Servicio a domicilio</option>
+              <option value="estetica">Estética y peluquería</option>
+              <option value="otro">Otro</option>
+            </select>
+          </div>
+          
+          <div class="mb-3">
+            <label for="descripcion" class="form-label">Descripción</label>
+            <textarea class="form-control" id="descripcion" name="descripcion" rows="3" required></textarea>
+          </div>
+          
+          <div class="mb-3">
+            <label for="precioBase" class="form-label">Precio base</label>
+            <div class="input-group">
+              <span class="input-group-text">$</span>
+              <input type="number" step="0.01" class="form-control" id="precioBase" name="precioBase" required>
+            </div>
+          </div>
+          
+          <div class="mb-3">
+            <label for="duracionEstimada" class="form-label">Duración estimada (minutos)</label>
+            <input type="number" class="form-control" id="duracionEstimada" name="duracionEstimada">
+          </div>
+          
+          <div class="mb-3">
+            <label for="requisitos" class="form-label">Requisitos</label>
+            <textarea class="form-control" id="requisitos" name="requisitos" rows="2"></textarea>
+            <small class="text-muted">Indique si el servicio requiere alguna preparación especial.</small>
+          </div>
+          
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="requierePresencial" name="requierePresencial">
+            <label class="form-check-label" for="requierePresencial">
+              Requiere atención presencial
+            </label>
+          </div>
+          
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="activo" name="activo" checked>
+            <label class="form-check-label" for="activo">
+              Servicio activo
+            </label>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-primary" id="guardarServicio">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de confirmación para eliminar -->
+<div class="modal fade" id="eliminarServicioModal" tabindex="-1" aria-labelledby="eliminarServicioModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="eliminarServicioModalLabel">Confirmar eliminación</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        ¿Estás seguro de que deseas eliminar este servicio? Esta acción no se puede deshacer.
+        <input type="hidden" id="eliminarServicioId">
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-danger" id="confirmarEliminar">Eliminar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Funciones para CRUD de servicios
+  function verServicio(id) {
+    window.location.href = `/admin/servicios/${id}`;
+  }
+  
+  function editarServicio(id) {
+    // Obtener datos del servicio y llenar el formulario
+    fetch(`/api/servicios/${id}`, {
+      headers: {
+        'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)adminToken\s*\=\s*([^;]*).*$)|^.*$/, "$1")}`
+      }
+    })
+    .then(response => response.json())
+    .then(data => {
+      document.getElementById('servicioId').value = data._id;
+      document.getElementById('nombre').value = data.nombre || '';
+      document.getElementById('categoria').value = data.categoria || 'consulta';
+      document.getElementById('descripcion').value = data.descripcion || '';
+      document.getElementById('precioBase').value = data.precioBase || '';
+      document.getElementById('duracionEstimada').value = data.duracionEstimada || '';
+      document.getElementById('requisitos').value = data.requisitos || '';
+      document.getElementById('requierePresencial').checked = data.requierePresencial || false;
+      document.getElementById('activo').checked = data.activo !== false; // Por defecto true si no está definido
+      
+      document.getElementById('nuevoServicioModalLabel').textContent = 'Editar Servicio';
+      
+      // Mostrar el modal
+      new bootstrap.Modal(document.getElementById('nuevoServicioModal')).show();
+    })
+    .catch(error => console.error('Error:', error));
+  }
+
+  function eliminarServicio(id) {
+    document.getElementById('eliminarServicioId').value = id;
+    new bootstrap.Modal(document.getElementById('eliminarServicioModal')).show();
+  }
+
+  // Configurar eventos cuando el DOM esté cargado
+  document.addEventListener('DOMContentLoaded', function() {
+    // Guardar servicio (crear o actualizar)
+    document.getElementById('guardarServicio').addEventListener('click', function() {
+      const servicioId = document.getElementById('servicioId').value;
+      const method = servicioId ? 'PUT' : 'POST';
+      const url = servicioId ? `/api/servicios/${servicioId}` : '/api/servicios';
+      
+      const servicioData = {
+        nombre: document.getElementById('nombre').value,
+        categoria: document.getElementById('categoria').value,
+        descripcion: document.getElementById('descripcion').value,
+        precioBase: parseFloat(document.getElementById('precioBase').value),
+        duracionEstimada: parseInt(document.getElementById('duracionEstimada').value) || 0,
+        requisitos: document.getElementById('requisitos').value,
+        requierePresencial: document.getElementById('requierePresencial').checked,
+        activo: document.getElementById('activo').checked
+      };
+      
+      fetch(url, {
+        method: method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)adminToken\s*\=\s*([^;]*).*$)|^.*$/, "$1")}`
+        },
+        body: JSON.stringify(servicioData)
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Error en la solicitud');
+        }
+        return response.json();
+      })
+      .then(() => {
+        // Cerrar modal y recargar página
+        bootstrap.Modal.getInstance(document.getElementById('nuevoServicioModal')).hide();
+        window.location.reload();
+      })
+      .catch(error => {
+        alert('Error al guardar servicio: ' + error.message);
+      });
+    });
+    
+    // Confirmar eliminación
+    document.getElementById('confirmarEliminar').addEventListener('click', function() {
+      const servicioId = document.getElementById('eliminarServicioId').value;
+      
+      fetch(`/api/servicios/${servicioId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)adminToken\s*\=\s*([^;]*).*$)|^.*$/, "$1")}`
+        }
+      })
+      .then(response => {
+        if (!response.ok) {
+          throw new Error('Error en la solicitud');
+        }
+        return response.json();
+      })
+      .then(() => {
+        bootstrap.Modal.getInstance(document.getElementById('eliminarServicioModal')).hide();
+        window.location.reload();
+      })
+      .catch(error => {
+        alert('Error al eliminar servicio: ' + error.message);
+      });
+    });
+    
+    // Limpiar formulario al abrir modal de nuevo servicio
+    document.getElementById('nuevoServicioModal').addEventListener('show.bs.modal', function(event) {
+      if (!event.relatedTarget || !event.relatedTarget.classList.contains('btn-warning')) {
+        document.getElementById('servicioForm').reset();
+        document.getElementById('servicioId').value = '';
+        document.getElementById('activo').checked = true; // Por defecto activo
+        document.getElementById('nuevoServicioModalLabel').textContent = 'Nuevo Servicio';
+      }
+    });
+  });
+  
+  // Función para obtener el token desde cookies
+  function obtenerToken() {
+    return document.cookie.replace(/(?:(?:^|.*;\s*)adminToken\s*\=\s*([^;]*).*$)|^.*$/, "$1");
+  }
+</script>
+` }) %>
