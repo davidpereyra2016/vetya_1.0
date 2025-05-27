@@ -28,21 +28,43 @@ const disponibilidadSchema = new Schema({
         type: Number, // 0 = Domingo, 1 = Lunes, ... 6 = Sábado
         required: true
       },
-      apertura: {
-        type: String, // Formato: "HH:MM"
-        required: true
+      // Turno mañana
+      manana: {
+        activo: {
+          type: Boolean,
+          default: true
+        },
+        apertura: {
+          type: String, // Formato: "HH:MM"
+          default: "08:00"
+        },
+        cierre: {
+          type: String, // Formato: "HH:MM"
+          default: "12:00"
+        },
+        intervalo: {
+          type: Number, // Intervalo en minutos entre citas
+          default: 30
+        }
       },
-      cierre: {
-        type: String, // Formato: "HH:MM"
-        required: true
-      },
-      intervalo: {
-        type: Number, // Intervalo en minutos entre citas
-        default: 30
-      },
-      descanso: {
-        inicio: String, // Formato: "HH:MM"
-        fin: String // Formato: "HH:MM"
+      // Turno tarde-noche
+      tarde: {
+        activo: {
+          type: Boolean,
+          default: true
+        },
+        apertura: {
+          type: String, // Formato: "HH:MM"
+          default: "16:00"
+        },
+        cierre: {
+          type: String, // Formato: "HH:MM"
+          default: "20:00"
+        },
+        intervalo: {
+          type: Number, // Intervalo en minutos entre citas
+          default: 30
+        }
       }
     }]
   },
