@@ -49,7 +49,7 @@ router.get("/estado/:estado", protectRoute, async (req, res) => {
 // Obtener emergencias activas del usuario
 router.get("/activas", protectRoute, async (req, res) => {
   try {
-    const estadosActivos = ["Solicitada", "Asignada", "En camino"];
+    const estadosActivos = ["Solicitada", "Asignada", "Confirmada", "En camino"];
     
     const emergencias = await Emergencia.find({ 
       usuario: req.user._id,
@@ -163,6 +163,24 @@ router.post("/", protectRoute, async (req, res) => {
   try {
     const { mascota, descripcion, tipoEmergencia, nivelUrgencia, ubicacion, imagenes } = req.body;
     
+    // Verificar si el usuario ya tiene una emergencia activa o reciente (dentro de los últimos 5 minutos)
+    const tiempoLimite = new Date(Date.now() - 5 * 60 * 1000); // 5 minutos atrás
+    
+    const emergenciasRecientes = await Emergencia.find({
+      usuario: req.user._id,
+      estado: { $in: ['Solicitada', 'Asignada', 'En camino'] },
+      fechaSolicitud: { $gte: tiempoLimite }
+    });
+    
+    if (emergenciasRecientes.length > 0) {
+      console.log(`El usuario ${req.user._id} ya tiene una emergencia activa o reciente`);
+      return res.status(429).json({
+        message: 'Ya tienes una emergencia activa o has solicitado una recientemente. Por favor espera 5 minutos entre solicitudes.',
+        tiempoRestante: Math.ceil((new Date(emergenciasRecientes[0].expiraEn) - new Date()) / 1000 / 60), // tiempo restante en minutos
+        emergenciaActiva: emergenciasRecientes[0]
+      });
+    }
+    
     // Validar campos obligatorios
     if (!mascota || !descripcion || !tipoEmergencia || !ubicacion) {
       return res.status(400).json({ message: "Por favor completa todos los campos obligatorios" });
@@ -232,6 +250,114 @@ router.post("/", protectRoute, async (req, res) => {
   } catch (error) {
     console.log(error);
     res.status(500).json({ message: "Error al crear la solicitud de emergencia" });
+  }
+});
+
+// Verificar y cancelar emergencias expiradas
+router.get("/verificar-expiracion/:id", protectRoute, async (req, res) => {
+  try {
+    const emergencia = await Emergencia.findById(req.params.id);
+    
+    if (!emergencia) {
+      return res.status(404).json({ message: "Emergencia no encontrada" });
+    }
+    
+    // Verificar si el usuario actual es el propietario
+    if (emergencia.usuario.toString() !== req.user._id.toString()) {
+      return res.status(401).json({ message: "No autorizado para verificar esta emergencia" });
+    }
+    
+    let expiracionOcurrida = false;
+    let mensajeExpiracion = '';
+
+    // Verificar si la emergencia ha expirado (Solicitud inicial no atendida)
+    if (emergencia.estado === 'Solicitada' && emergencia.expiraEn && new Date() > new Date(emergencia.expiraEn)) {
+      emergencia.estado = 'Cancelada';
+      emergencia.motivoCancelacion = 'Expirada antes de asignación';
+      emergencia.expirada = true;
+      await emergencia.save();
+      expiracionOcurrida = true;
+      mensajeExpiracion = 'La solicitud de emergencia ha expirado antes de ser asignada y fue cancelada automáticamente';
+    }
+    // Verificar si la emergencia ha expirado (Veterinario asignado no respondió a tiempo)
+    else if (emergencia.estado === 'Asignada' && emergencia.expiraRespuestaVetEn && new Date() > new Date(emergencia.expiraRespuestaVetEn)) {
+      emergencia.estado = 'Cancelada';
+      emergencia.motivoCancelacion = 'Veterinario no respondió a tiempo';
+      emergencia.expirada = true;
+      await emergencia.save();
+      expiracionOcurrida = true;
+      mensajeExpiracion = 'El veterinario asignado no respondió a tiempo y la emergencia fue cancelada automáticamente';
+      // Aquí podrías añadir lógica para notificar al cliente que la emergencia fue cancelada
+      // y quizás reabrir la posibilidad de buscar otro veterinario si es aplicable.
+    }
+
+    if (expiracionOcurrida) {
+      return res.status(200).json({
+        message: mensajeExpiracion,
+        emergencia
+      });
+    }
+    
+    // Calcular tiempo restante en segundos para la próxima expiración relevante
+    let tiempoRestante = 0;
+    let proximaExpiracion = null;
+
+    if (emergencia.estado === 'Solicitada' && emergencia.expiraEn) {
+      proximaExpiracion = new Date(emergencia.expiraEn);
+    } else if (emergencia.estado === 'Asignada' && emergencia.expiraRespuestaVetEn) {
+      proximaExpiracion = new Date(emergencia.expiraRespuestaVetEn);
+    }
+
+    if (proximaExpiracion) {
+      tiempoRestante = Math.max(0, Math.floor((proximaExpiracion - new Date()) / 1000));
+    }
+    
+    return res.status(200).json({
+      message: 'Emergencia válida',
+      tiempoRestante,
+      emergencia
+    });
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Error al verificar expiración de la emergencia" });
+  }
+});
+
+// Cancelar una emergencia
+router.post("/:id/cancelar", protectRoute, async (req, res) => {
+  try {
+    const emergencia = await Emergencia.findById(req.params.id);
+    
+    if (!emergencia) {
+      return res.status(404).json({ message: "Emergencia no encontrada" });
+    }
+    
+    // Verificar que el usuario sea el propietario de la emergencia
+    if (emergencia.usuario.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "No autorizado para cancelar esta emergencia" });
+    }
+    
+    // Verificar que la emergencia esté en un estado que permita cancelación
+    const estadosPermitidos = ["Solicitada", "Asignada"];
+    if (!estadosPermitidos.includes(emergencia.estado)) {
+      return res.status(400).json({ 
+        message: `No se puede cancelar una emergencia en estado ${emergencia.estado}` 
+      });
+    }
+    
+    // Actualizar estado
+    emergencia.estado = "Cancelada";
+    emergencia.expirada = true;
+    emergencia.expiraEn = new Date(); // Expira inmediatamente
+    await emergencia.save();
+    
+    return res.status(200).json({ 
+      message: "Emergencia cancelada exitosamente",
+      emergencia
+    });
+  } catch (error) {
+    console.log("Error al cancelar emergencia:", error);
+    return res.status(500).json({ message: "Error al cancelar la emergencia" });
   }
 });
 
@@ -327,7 +453,8 @@ router.patch("/:id/asignar-veterinario", protectRoute, async (req, res) => {
     }
     
     emergencia.veterinario = veterinarioId;
-    emergencia.estado = "Asignada";
+    // El estado no se cambia aquí, se mantiene como 'Solicitada'
+    // El cambio de estado a 'Asignada' o 'Confirmada' se hará en el paso de confirmación del usuario.
     emergencia.fechaAsignacion = new Date();
     
     await emergencia.save();
@@ -708,7 +835,9 @@ router.patch("/:id/confirmar", protectRoute, async (req, res) => {
     }
     
     // Actualizar estado y método de pago
-    emergencia.estado = "Confirmada";
+    // Cuando el cliente confirma, la emergencia pasa a 'Asignada',
+    // esperando la aceptación/confirmación del veterinario desde su app.
+    emergencia.estado = "Asignada";
     
     if (metodoPago) {
       emergencia.metodoPago = metodoPago;
