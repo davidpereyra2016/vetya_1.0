@@ -2,13 +2,18 @@ import mongoose from "mongoose";
 
 /**
  * Esquema para las notificaciones del sistema
- * Este modelo almacena las notificaciones que se envían a los usuarios
+ * Este modelo almacena las notificaciones que se envían a los usuarios y prestadores de servicios
  * Permite realizar seguimiento de notificaciones leídas/no leídas y categorizarlas
  */
 const notificacionSchema = new mongoose.Schema({
   usuario: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
+    required: true
+  },
+  prestador: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Prestador',
     required: true
   },
   titulo: {
@@ -73,6 +78,8 @@ const notificacionSchema = new mongoose.Schema({
 
 // Índice para buscar notificaciones no leídas de un usuario
 notificacionSchema.index({ usuario: 1, leida: 1 });
+// Índice para buscar notificaciones no leídas de un prestador
+notificacionSchema.index({ prestador: 1, leida: 1 });
 
 // Índice para ordenar por fecha
 notificacionSchema.index({ fechaEnvio: -1 });

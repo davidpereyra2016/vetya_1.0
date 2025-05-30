@@ -1,10 +1,13 @@
 import express from 'express';
-import mongoose from 'mongoose';
+import mongoose from 'mongoose';  
 import Emergencia from "../models/Emergencia.js";
 import Mascota from "../models/Mascota.js";
 import Prestador from "../models/Prestador.js";
+import Usuario from "../models/User.js";
 import cloudinary from "../lib/cloudinary.js";
 import protectRoute from "../middleware/auth.middleware.js";
+import Notificacion from "../models/Notificacion.js";
+import { enviarNotificacionPush, esTokenValido } from "../utils/notificacionesUtils.js";
 
 const router = express.Router();
 
@@ -461,7 +464,62 @@ router.patch("/:id/asignar-veterinario", protectRoute, async (req, res) => {
     
     const emergenciaActualizada = await Emergencia.findById(emergencia._id)
       .populate("mascota", "nombre tipo raza imagen")
+      .populate("usuario", "nombre")
       .populate("veterinario", "nombre especialidad imagen rating");
+    
+    // Crear notificación para el veterinario
+    try {
+      // Obtener información del usuario y del prestador para la notificación
+      const veterinario = await Prestador.findById(veterinarioId).populate('usuario');
+      const mascota = await Mascota.findById(emergencia.mascota);
+      
+      if (veterinario && veterinario.usuario && mascota) {
+        // Crear la notificación
+        const nuevaNotificacion = new Notificacion({
+          tipo: 'emergencia_asignada',
+          titulo: 'Nueva emergencia asignada',
+          mensaje: `Se te ha asignado una emergencia: ${emergencia.tipoEmergencia} para ${mascota.nombre}`,
+          datos: {
+            emergenciaId: emergencia._id,
+            mascotaNombre: mascota.nombre,
+            tipoEmergencia: emergencia.tipoEmergencia,
+            clienteNombre: emergenciaActualizada.usuario ? emergenciaActualizada.usuario.nombre : 'Cliente',
+            ubicacion: emergencia.ubicacion
+          },
+          prestador: veterinarioId,
+          leida: false,
+          fechaEnvio: new Date(),
+          accion: 'confirmar_emergencia'
+        });
+        
+        await nuevaNotificacion.save();
+        
+        // Enviar notificación push si el veterinario tiene un token
+        if (veterinario.usuario.deviceToken && esTokenValido(veterinario.usuario.deviceToken)) {
+          await enviarNotificacionPush(
+            veterinario.usuario.deviceToken,
+            'Nueva emergencia asignada',
+            `Se te ha asignado una emergencia: ${emergencia.tipoEmergencia}`,
+            {
+              emergenciaId: emergencia._id.toString(),
+              tipo: 'emergencia_asignada',
+              accion: 'confirmar_emergencia',
+              // Añadir datos adicionales para notificación
+              distancia: Math.max(1.0, calcularDistancia(
+                emergencia.ubicacion.coordenadas.lat,
+                emergencia.ubicacion.coordenadas.lng,
+                veterinario.ubicacionActual?.coordenadas?.[1] || 0,
+                veterinario.ubicacionActual?.coordenadas?.[0] || 0
+              )),
+              ubicacion: emergencia.ubicacion
+            }
+          );
+        }
+      }
+    } catch (notifError) {
+      console.log('Error al crear notificación:', notifError);
+      // No interrumpimos el flujo principal si falla la notificación
+    }
     
     res.status(200).json(emergenciaActualizada);
   } catch (error) {
@@ -859,8 +917,136 @@ router.patch("/:id/confirmar", protectRoute, async (req, res) => {
     console.log(`Emergencia confirmada exitosamente: ${emergencia._id}`);
     return res.status(200).json(emergenciaActualizada);
   } catch (error) {
-    console.error(`Error al confirmar emergencia: ${error.message}`, error);
-    return res.status(500).json({ message: "Error al confirmar la emergencia", error: error.message });
+    console.log("Error al procesar confirmación de emergencia:", error);
+    return res.status(500).json({ message: "Error al procesar la confirmación de emergencia" });
+  }
+});
+
+// Confirmar o rechazar una emergencia por parte del veterinario
+router.patch("/:id/confirmacion-veterinario", protectRoute, async (req, res) => {
+  try {
+    const { confirmado } = req.body;
+    
+    if (confirmado === undefined) {
+      return res.status(400).json({ message: "Se requiere indicar si confirma o rechaza la emergencia" });
+    }
+    
+    const emergencia = await Emergencia.findById(req.params.id);
+    
+    if (!emergencia) {
+      return res.status(404).json({ message: "Emergencia no encontrada" });
+    }
+    
+    // Buscar si el usuario actual es un prestador
+    const prestador = await Prestador.findOne({ usuario: req.user._id });
+    
+    if (!prestador) {
+      return res.status(401).json({ message: "No autorizado: solo prestadores pueden confirmar emergencias" });
+    }
+    
+    // Verificar que este prestador sea el asignado a la emergencia
+    if (emergencia.veterinario.toString() !== prestador._id.toString()) {
+      return res.status(401).json({ message: "No autorizado: solo el veterinario asignado puede confirmar" });
+    }
+    
+    // Verificar que la emergencia esté en estado solicitada
+    if (emergencia.estado !== "Solicitada") {
+      return res.status(400).json({ 
+        message: `No se puede ${confirmado ? 'confirmar' : 'rechazar'} una emergencia que no está en estado 'Solicitada'` 
+      });
+    }
+    
+    if (confirmado) {
+      // El veterinario confirma que atenderá la emergencia
+      emergencia.estado = "Asignada";
+      // Actualizar o establecer la fecha de asignación
+      if (!emergencia.fechaAsignacion) {
+        emergencia.fechaAsignacion = new Date();
+      }
+      
+      // Guardar cambios
+      await emergencia.save();
+      
+      // Crear notificación para el cliente
+      const nuevaNotificacion = new Notificacion({
+        tipo: 'emergencia_confirmada',
+        titulo: 'Emergencia confirmada',
+        mensaje: `El veterinario ha confirmado tu emergencia y está en camino`,
+        datos: {
+          emergenciaId: emergencia._id,
+          veterinarioId: prestador._id
+        },
+        usuario: emergencia.usuario,
+        leida: false,
+        fechaEnvio: new Date(),
+        accion: 'ver_emergencia'
+      });
+      
+      await nuevaNotificacion.save();
+      
+      // Enviar notificación push al cliente
+      try {
+        const cliente = await Usuario.findById(emergencia.usuario);
+        if (cliente && cliente.deviceToken && esTokenValido(cliente.deviceToken)) {
+          // Calcular la distancia manteniendo el radio de privacidad de 1km
+          const distancia = Math.max(1.0, calcularDistancia(
+            emergencia.ubicacion.coordenadas.lat,
+            emergencia.ubicacion.coordenadas.lng,
+            prestador.ubicacionActual?.coordenadas?.[1] || 0,
+            prestador.ubicacionActual?.coordenadas?.[0] || 0
+          ));
+          
+          // Calcular tiempo estimado de llegada (2 min por km a 30km/h en promedio)
+          const tiempoEstimadoMin = Math.ceil(distancia * 2);
+          
+          await enviarNotificacionPush(
+            cliente.deviceToken,
+            'Emergencia confirmada',
+            `El veterinario ha confirmado tu emergencia y está en camino. Tiempo estimado: ${tiempoEstimadoMin} min.`,
+            {
+              emergenciaId: emergencia._id.toString(),
+              tipo: 'emergencia_confirmada',
+              accion: 'ver_emergencia',
+              distancia: distancia.toFixed(1),
+              tiempoEstimado: tiempoEstimadoMin,
+              veterinarioNombre: prestador.nombre
+            }
+          );
+        }
+      } catch (notifError) {
+        console.log('Error al enviar notificación al cliente:', notifError);
+        // No interrumpimos el flujo principal
+      }
+      
+      // Devolver emergencia actualizada
+      const emergenciaActualizada = await Emergencia.findById(emergencia._id)
+        .populate("mascota", "nombre tipo raza imagen")
+        .populate("veterinario", "nombre especialidad imagen rating")
+        .populate("usuario", "nombre");
+      
+      return res.status(200).json({
+        message: "Emergencia confirmada exitosamente",
+        emergencia: emergenciaActualizada
+      });
+    } else {
+      // El veterinario rechaza la emergencia
+      // Liberar al veterinario
+      emergencia.veterinario = null;
+      emergencia.fechaAsignacion = null;
+      // Se mantiene como solicitada para poder asignarla a otro veterinario
+      
+      // Guardar cambios
+      await emergencia.save();
+      
+      // Devolver mensaje de éxito
+      return res.status(200).json({
+        message: "Emergencia rechazada exitosamente",
+        emergencia
+      });
+    }
+  } catch (error) {
+    console.log("Error al procesar confirmación de veterinario:", error);
+    return res.status(500).json({ message: "Error al procesar la confirmación del veterinario" });
   }
 });
 
