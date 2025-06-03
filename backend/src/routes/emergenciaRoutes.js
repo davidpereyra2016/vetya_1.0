@@ -78,10 +78,10 @@ router.get("/asignadas", protectRoute, async (req, res) => {
       return res.status(403).json({ message: "Solo los veterinarios pueden acceder a emergencias asignadas" });
     }
     
-    // Obtener todas las emergencias asignadas a este veterinario
+    // Obtener todas las emergencias asignadas a este veterinario (excluyendo las atendidas)
     const emergencias = await Emergencia.find({
       veterinario: prestador._id,
-      estado: { $in: ["Asignada", "En camino", "Atendida"] }
+      estado: { $in: ["Asignada", "En camino"] }
     })
       .populate("mascota", "nombre tipo raza imagen edad genero color")
       .populate("usuario", "username telefono email profilePicture")
@@ -541,6 +541,96 @@ function calcularDistancia(lat1, lon1, lat2, lon2) {
   const d = R * c; // Distancia en km
   return d;
 }
+
+// Actualizar estado de una emergencia (En camino, Atendida, etc.)
+router.patch("/:id/estado", protectRoute, async (req, res) => {
+  try {
+    const { estado } = req.body;
+    
+    if (!estado) {
+      return res.status(400).json({ message: "El estado es requerido" });
+    }
+    
+    // Validar que el estado sea válido
+    const estadosValidos = ['Solicitada', 'Asignada', 'Confirmada', 'En camino', 'Atendida', 'Cancelada'];
+    if (!estadosValidos.includes(estado)) {
+      return res.status(400).json({ message: "Estado no válido" });
+    }
+    
+    const emergencia = await Emergencia.findById(req.params.id);
+    
+    if (!emergencia) {
+      return res.status(404).json({ message: "Emergencia no encontrada" });
+    }
+    
+    // Verificar que el usuario sea el veterinario asignado a la emergencia
+    const prestador = await Prestador.findOne({ usuario: req.user._id });
+    
+    if (!prestador || prestador.tipo !== "Veterinario" || 
+        emergencia.veterinario.toString() !== prestador._id.toString()) {
+      return res.status(403).json({ 
+        message: "No autorizado: solo el veterinario asignado puede cambiar el estado" 
+      });
+    }
+    
+    // Si está cambiando a Atendida, registrar fecha de atención
+    if (estado === 'Atendida') {
+      emergencia.fechaAtencion = new Date();
+      // Registrar esto en el historial de emergencias
+      emergencia.historial.push({
+        estado: 'Atendida',
+        fecha: new Date(),
+        usuario: req.user._id,
+        notas: 'Emergencia atendida por el veterinario'
+      });
+    }
+    
+    // Si está cambiando a En camino, registrar fecha
+    if (estado === 'En camino') {
+      emergencia.fechaEnCamino = new Date();
+      emergencia.historial.push({
+        estado: 'En camino',
+        fecha: new Date(),
+        usuario: req.user._id,
+        notas: 'Veterinario en camino'
+      });
+    }
+    
+    // Actualizar el estado
+    emergencia.estado = estado;
+    await emergencia.save();
+    
+    // Enviar notificación al cliente
+    try {
+      if (emergencia.usuario) {
+        const notificationText = estado === 'Atendida' 
+          ? "Tu emergencia ha sido atendida por el veterinario" 
+          : `El estado de tu emergencia ha cambiado a: ${estado}`;
+        
+        // Crear notificación en la base de datos
+        await Notificacion.create({
+          usuario: emergencia.usuario,
+          titulo: `Emergencia ${estado}`,
+          mensaje: notificationText,
+          tipo: 'emergencia_actualizada',
+          datos: {
+            emergenciaId: emergencia._id.toString(),
+            estado
+          },
+          leida: false
+        });
+      }
+    } catch (notifError) {
+      console.log('Error al crear notificación:', notifError);
+      // No interrumpimos el flujo principal si falla la notificación
+    }
+    
+    res.status(200).json(emergencia);
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ message: "Error al actualizar el estado de la emergencia" });
+  }
+});
 
 // Obtener actualización de ubicación del veterinario asignado a una emergencia
 router.get("/:id/ubicacion-veterinario", protectRoute, async (req, res) => {
@@ -1047,6 +1137,35 @@ router.patch("/:id/confirmacion-veterinario", protectRoute, async (req, res) => 
   } catch (error) {
     console.log("Error al procesar confirmación de veterinario:", error);
     return res.status(500).json({ message: "Error al procesar la confirmación del veterinario" });
+  }
+});
+
+//cantidad de emergencias del prestador (veterinario)
+router.get("/cantidad-emergencias", protectRoute, async (req, res) => {
+  try {
+    const prestador = await Prestador.findOne({ usuario: req.user._id });
+    
+    if (!prestador || prestador.tipo !== "Veterinario") {
+      return res.status(403).json({ message: "Solo los veterinarios pueden acceder a esta información" });
+    }
+    
+    // Obtener todas las emergencias del veterinario
+    const todasEmergencias = await Emergencia.find({ veterinario: prestador._id });
+    
+    // Filtrar las emergencias atendidas
+    const emergenciasAtendidas = await Emergencia.find({ 
+      veterinario: prestador._id,
+      estado: "Atendida"
+    });
+    
+    res.status(200).json({
+      cantidad: todasEmergencias.length,
+      cantidadAtendidas: emergenciasAtendidas.length,
+      emergencias: todasEmergencias
+    });
+  } catch (error) {
+    console.log("Error al obtener la cantidad de emergencias:", error);
+    res.status(500).json({ message: "Error al obtener la cantidad de emergencias" });
   }
 });
 
