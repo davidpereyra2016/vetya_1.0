@@ -83,7 +83,7 @@ const disponibilidadSchema = new Schema({
       fin: String // Formato: "HH:MM"
     }]
   }],
-  // Fechas y horas ya reservadas (no disponibles)
+  // Fechas y horas ya reservadas
   reservas: [{
     fecha: {
       type: Date,

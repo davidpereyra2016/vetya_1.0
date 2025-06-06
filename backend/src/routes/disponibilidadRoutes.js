@@ -176,8 +176,21 @@ router.post('/prestador/:prestadorId', protectRoute, async (req, res) => {
     });
     
     if (disponibilidad) {
-      // Actualizar disponibilidad existente
       if (horarioEspecifico) {
+        // Actualizar intervalos con la duración del servicio si es necesario
+        if (horarioEspecifico.horarios) {
+          horarioEspecifico.horarios = horarioEspecifico.horarios.map(h => ({
+            ...h,
+            manana: {
+              ...h.manana,
+              intervalo: h.manana?.intervalo || duracionServicio // Mantener valor existente o usar duración del servicio como fallback
+            },
+            tarde: {
+              ...h.tarde,
+              intervalo: h.tarde?.intervalo || duracionServicio // Mantener valor existente o usar duración del servicio como fallback
+            }
+          }));
+        }
         disponibilidad.horarioEspecifico = horarioEspecifico;
       }
       
@@ -187,7 +200,7 @@ router.post('/prestador/:prestadorId', protectRoute, async (req, res) => {
       
       await disponibilidad.save();
     } else {
-      // Crear nueva disponibilidad
+      // Crear nueva disponibilidad general
       disponibilidad = new Disponibilidad({
         prestador: prestadorId,
         servicio: null,
@@ -261,6 +274,9 @@ router.get('/prestador/:prestadorId/servicio/:servicioId', protectRoute, async (
     if (!servicio) {
       return res.status(404).json({ message: 'Servicio no encontrado para este prestador' });
     }
+
+    // Obtener la duración del servicio
+    const duracionServicio = servicio.duracion || 30;
     
     // Buscar disponibilidad específica para este servicio
     let disponibilidadServicio = await Disponibilidad.findOne({
@@ -286,13 +302,13 @@ router.get('/prestador/:prestadorId/servicio/:servicioId', protectRoute, async (
               activo: h.manana?.activo || true,
               apertura: h.manana?.apertura || "08:00",
               cierre: h.manana?.cierre || "12:00",
-              intervalo: 30 // Valor por defecto
+              intervalo: duracionServicio // Valor por defecto
             },
             tarde: {
               activo: h.tarde?.activo || true,
               apertura: h.tarde?.apertura || "16:00",
               cierre: h.tarde?.cierre || "20:00",
-              intervalo: 30 // Valor por defecto
+              intervalo: duracionServicio // Valor por defecto
             }
           }));
         }
@@ -308,17 +324,44 @@ router.get('/prestador/:prestadorId/servicio/:servicioId', protectRoute, async (
           reservas: []
         };
       } else {
+        // Actualizar intervalos con la duración del servicio
+        const horarios = disponibilidadGeneral.horarioEspecifico.horarios.map(h => ({
+          ...h,
+          manana: {
+            ...h.manana,
+            intervalo: h.manana?.intervalo || duracionServicio
+          },
+          tarde: {
+            ...h.tarde,
+            intervalo: h.tarde?.intervalo || duracionServicio
+          }
+        }));
         // Usar la disponibilidad general como base
         disponibilidadServicio = {
           prestador: prestadorId,
           servicio: servicioId,
           horarioEspecifico: {
             activo: false, // Usa horario general
-            horarios: disponibilidadGeneral.horarioEspecifico.horarios
+            horarios: horarios
           },
           fechasEspeciales: disponibilidadGeneral.fechasEspeciales,
           reservas: []
         };
+      }
+    }else {
+      // Asegurarse de que los intervalos estén actualizados
+      if (disponibilidadServicio.horarioEspecifico.horarios) {
+        disponibilidadServicio.horarioEspecifico.horarios = disponibilidadServicio.horarioEspecifico.horarios.map(h => ({
+          ...h,
+          manana: {
+            ...h.manana,
+            intervalo: h.manana?.intervalo || duracionServicio
+          },
+          tarde: {
+            ...h.tarde,
+            intervalo: h.tarde?.intervalo || duracionServicio
+          }
+        }));
       }
     }
     
@@ -366,7 +409,8 @@ router.post('/prestador/:prestadorId/servicio/:servicioId', protectRoute, async 
     }
     
     console.log(`Configurando disponibilidad para servicio ${servicioId} del prestador ${prestadorId}`);
-    
+    // Obtener la duración del servicio
+    const duracionServicio = servicio.duracion || 30;
     // Buscar disponibilidad existente o crear una nueva
     let disponibilidad = await Disponibilidad.findOne({
       prestador: prestadorId,
@@ -376,6 +420,20 @@ router.post('/prestador/:prestadorId/servicio/:servicioId', protectRoute, async 
     if (disponibilidad) {
       // Actualizar disponibilidad existente
       if (horarioEspecifico) {
+        // Actualizar intervalos con la duración del servicio si es necesario
+        if (horarioEspecifico.horarios) {
+          horarioEspecifico.horarios = horarioEspecifico.horarios.map(h => ({
+            ...h,
+            manana: {
+              ...h.manana,
+              intervalo: h.manana?.intervalo || duracionServicio // Mantener valor existente o usar duración del servicio como fallback
+            },
+            tarde: {
+              ...h.tarde,
+              intervalo: h.tarde?.intervalo || duracionServicio // Mantener valor existente o usar duración del servicio como fallback
+            }
+          }));
+        }
         disponibilidad.horarioEspecifico = horarioEspecifico;
       }
       
@@ -385,13 +443,25 @@ router.post('/prestador/:prestadorId/servicio/:servicioId', protectRoute, async 
       
       await disponibilidad.save();
     } else {
+      // Crear nueva disponibilidad con la duración del servicio
+      const horariosConDuracion = horarioEspecifico?.horarios?.map(h => ({
+        ...h,
+        manana: {
+          ...h.manana,
+          intervalo: h.manana?.intervalo || duracionServicio
+        },
+        tarde: {
+          ...h.tarde,
+          intervalo: h.tarde?.intervalo || duracionServicio
+        }
+      })) || [];
       // Crear nueva disponibilidad
       disponibilidad = new Disponibilidad({
         prestador: prestadorId,
         servicio: servicioId,
-        horarioEspecifico: horarioEspecifico || {
-          activo: false,
-          horarios: []
+        horarioEspecifico: {
+          activo: horarioEspecifico?.activo || false,
+          horarios: horariosConDuracion
         },
         fechasEspeciales: fechasEspeciales || []
       });
