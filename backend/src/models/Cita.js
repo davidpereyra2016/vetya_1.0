@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 /**
  * Esquema para las citas veterinarias
  * Este modelo almacena toda la información relacionada con las citas programadas
- * Incluye referencias a la mascota, veterinario, servicio y usuario
+ * Incluye referencias a la mascotas, prestadores, servicios y usuarios
  */
 const citaSchema = new mongoose.Schema({
   mascota: {
@@ -11,9 +11,9 @@ const citaSchema = new mongoose.Schema({
     ref: 'Mascota',
     required: true
   },
-  veterinario: {
+  prestador: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Veterinario',
+    ref: 'Prestador',
     required: true
   },
   servicio: {
@@ -78,8 +78,8 @@ const citaSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Índice para buscar citas por rango de fechas y veterinario
-citaSchema.index({ fecha: 1, veterinario: 1 });
+// Índice para buscar citas por rango de fechas y prestador
+citaSchema.index({ fecha: 1, prestador: 1 });
 
 // Índice para buscar citas por usuario
 citaSchema.index({ usuario: 1 });

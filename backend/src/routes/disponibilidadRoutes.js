@@ -3,12 +3,9 @@ import Prestador from '../models/Prestador.js';
 import Disponibilidad from '../models/Disponibilidad.js';
 import Servicio from '../models/Servicio.js';
 import protectRoute from '../middleware/auth.middleware.js';
-import mongoose from 'mongoose';
 
 const router = express.Router();
 
-// Ruta para obtener todos los prestadores disponibles para emergencias
-// GET /api/disponibilidad/disponibles-emergencias
 router.get('/', async (req, res) => {
   try {
     console.log('Obteniendo prestadores disponibles para emergencias');
@@ -258,7 +255,7 @@ router.get('/prestador/:prestadorId/servicio/:servicioId', protectRoute, async (
     // Verificar que el servicio exista y pertenezca al prestador
     const servicio = await Servicio.findOne({
       _id: servicioId,
-      prestador: prestadorId
+      prestadorId: prestadorId
     });
     
     if (!servicio) {
@@ -361,7 +358,7 @@ router.post('/prestador/:prestadorId/servicio/:servicioId', protectRoute, async 
     // Verificar que el servicio exista y pertenezca al prestador
     const servicio = await Servicio.findOne({
       _id: servicioId,
-      prestador: prestadorId
+      prestadorId: prestadorId
     });
     
     if (!servicio) {

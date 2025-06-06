@@ -3,7 +3,9 @@ import Cita from "../models/Cita.js";
 import Mascota from "../models/Mascota.js";
 import Prestador from "../models/Prestador.js";
 import Servicio from "../models/Servicio.js";
+import Disponibilidad from "../models/Disponibilidad.js";
 import protectRoute from "../middleware/auth.middleware.js";
+import mongoose from "mongoose";
 
 const router = express.Router();
 
@@ -46,6 +48,195 @@ router.get("/estado/:estado", protectRoute, async (req, res) => {
     res.status(500).json({ message: "Error al obtener las citas" });
   }
 });
+
+// Obtener prestadores que ofrecen el servicio de consulta general
+router.get("/prestadores/consulta-general", protectRoute, async (req, res) => {
+  try {
+    // Buscar servicios de consulta general
+    const serviciosConsultaGeneral = await Servicio.find({
+      categoria: 'Consulta general',
+      activo: true
+    }).select('prestadorId');
+
+    if (!serviciosConsultaGeneral || serviciosConsultaGeneral.length === 0) {
+      return res.status(200).json([]);
+    }
+
+    // Obtener IDs únicos de prestadores
+    const prestadorIds = [...new Set(serviciosConsultaGeneral.map(s => s.prestadorId))];
+
+    // Buscar prestadores activos que ofrecen estos servicios
+    const prestadoresConsultaGeneral = await Prestador.find({
+      _id: { $in: prestadorIds },
+      activo: true
+    }).select('_id nombre tipo imagen direccion especialidades rating');
+
+    res.status(200).json(prestadoresConsultaGeneral);
+  } catch (error) {
+    console.error('Error al obtener prestadores con consulta general:', error);
+    res.status(500).json({ 
+      message: "Error interno al buscar prestadores", 
+      error: error.message 
+    });
+  }
+});
+
+// Obtener disponibilidad de un prestador para un servicio específico
+router.get("/prestadores/:prestadorId/disponibilidad", protectRoute, async (req, res) => {
+  try {
+    const { prestadorId } = req.params;
+    const { servicioId } = req.query; // ID del servicio que se quiere agendar
+
+    // Validaciones básicas
+    if (!mongoose.Types.ObjectId.isValid(prestadorId)) {
+      return res.status(400).json({ message: "ID de prestador inválido" });
+    }
+
+    // 1. Obtener el prestador y verificar que existe
+    const prestador = await Prestador.findById(prestadorId);
+    if (!prestador) {
+      return res.status(404).json({ message: "Prestador no encontrado" });
+    }
+
+    // 2. Obtener el servicio y verificar que el prestador lo ofrece
+    let servicio;
+    if (servicioId) {
+      servicio = await Servicio.findOne({ 
+        _id: servicioId, 
+        prestadorId: prestador._id 
+      });
+      
+      if (!servicio) {
+        return res.status(404).json({ 
+          message: "Este prestador no ofrece el servicio solicitado" 
+        });
+      }
+    }
+
+    // 3. Obtener las citas existentes del prestador (para filtrar horarios ocupados)
+    const citasExistentes = await Cita.find({
+      prestador: prestadorId,
+      estado: { $in: ["Pendiente", "Confirmada"] },
+      fecha: { $gte: new Date() } // Solo citas futuras
+    });
+
+    // 4. Generar disponibilidad para los próximos 14 días
+    const disponibilidad = [];
+    const hoy = new Date();
+    const duracionServicio = servicio?.duracion || 30; // Duración en minutos
+
+    for (let i = 0; i < 14; i++) {
+      const fecha = new Date(hoy);
+      fecha.setDate(hoy.getDate() + i);
+      const diaSemana = fecha.getDay(); // 0=Domingo, 1=Lunes, etc.
+
+      // Buscar horario del prestador para este día
+      const horarioDia = prestador.horarios.find(h => h.dia === diaSemana);
+      if (!horarioDia) continue; // No trabaja este día
+
+      // Procesar turno de mañana si está activo
+      const slotsDisponibles = [];
+      if (horarioDia.manana?.activo) {
+        const slotsManana = generarSlotsDisponibles(
+          horarioDia.manana.apertura,
+          horarioDia.manana.cierre,
+          duracionServicio,
+          fecha,
+          citasExistentes
+        );
+        slotsDisponibles.push(...slotsManana);
+      }
+
+      // Procesar turno de tarde si está activo
+      if (horarioDia.tarde?.activo) {
+        const slotsTarde = generarSlotsDisponibles(
+          horarioDia.tarde.apertura,
+          horarioDia.tarde.cierre,
+          duracionServicio,
+          fecha,
+          citasExistentes
+        );
+        slotsDisponibles.push(...slotsTarde);
+      }
+
+      if (slotsDisponibles.length > 0) {
+        disponibilidad.push({
+          fecha: fecha,
+          diaSemana: diaSemana,
+          nombreDia: obtenerNombreDia(diaSemana),
+          slots: slotsDisponibles
+        });
+      }
+    }
+
+    res.status(200).json(disponibilidad);
+  } catch (error) {
+    console.error('Error al obtener disponibilidad:', error);
+    res.status(500).json({ 
+      message: "Error al obtener disponibilidad", 
+      error: error.message 
+    });
+  }
+});
+
+// Función auxiliar para generar slots disponibles
+function generarSlotsDisponibles(horaInicio, horaFin, duracionMinutos, fecha, citasExistentes) {
+  const slots = [];
+  const [inicioHora, inicioMinuto] = horaInicio.split(':').map(Number);
+  const [finHora, finMinuto] = horaFin.split(':').map(Number);
+  
+  let horaActual = inicioHora;
+  let minutoActual = inicioMinuto;
+  const finEnMinutos = finHora * 60 + finMinuto;
+  
+  while (horaActual * 60 + minutoActual < finEnMinutos) {
+    const horaFinSlot = new Date(fecha);
+    horaFinSlot.setHours(horaActual, minutoActual + duracionMinutos, 0, 0);
+    
+    // Verificar si este slot está ocupado por alguna cita existente
+    const estaOcupado = citasExistentes.some(cita => {
+      const citaInicio = new Date(cita.fecha);
+      const [citaHora, citaMinuto] = cita.horaInicio.split(':').map(Number);
+      citaInicio.setHours(citaHora, citaMinuto, 0, 0);
+      
+      const citaFin = new Date(cita.fecha);
+      const [citaFinHora, citaFinMinuto] = cita.horaFin.split(':').map(Number);
+      citaFin.setHours(citaFinHora, citaFinMinuto, 0, 0);
+      
+      const slotInicio = new Date(fecha);
+      slotInicio.setHours(horaActual, minutoActual, 0, 0);
+      
+      return (
+        (slotInicio >= citaInicio && slotInicio < citaFin) ||
+        (horaFinSlot > citaInicio && horaFinSlot <= citaFin) ||
+        (slotInicio <= citaInicio && horaFinSlot >= citaFin)
+      );
+    });
+    
+    if (!estaOcupado) {
+      slots.push({
+        inicio: `${horaActual.toString().padStart(2, '0')}:${minutoActual.toString().padStart(2, '0')}`,
+        fin: horaFinSlot.toTimeString().substring(0, 5),
+        disponible: true
+      });
+    }
+    
+    // Avanzar al siguiente slot
+    minutoActual += duracionMinutos;
+    if (minutoActual >= 60) {
+      horaActual += Math.floor(minutoActual / 60);
+      minutoActual = minutoActual % 60;
+    }
+  }
+  
+  return slots;
+}
+
+// Función auxiliar para obtener nombre del día
+function obtenerNombreDia(numeroDia) {
+  const dias = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+  return dias[numeroDia];
+}
 
 // Obtener una cita por ID
 router.get("/:id", protectRoute, async (req, res) => {

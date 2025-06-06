@@ -641,8 +641,8 @@ router.get('/usuario/:userId', async (req, res) => {
   }
 });
 
-// Obtener servicios del prestador
-router.get('/:prestadorId/servicios', async (req, res) => {
+// Obtener servicios del prestador activo
+router.get('/:prestadorId/servicios/activo', async (req, res) => {
   try {
     const { prestadorId } = req.params;
     console.log('Obteniendo servicios para prestador ID:', prestadorId);
@@ -666,6 +666,69 @@ router.get('/:prestadorId/servicios', async (req, res) => {
     });
     
     console.log(`Se encontraron ${servicios.length} servicios para el prestador`);
+    res.json(servicios);
+  } catch (error) {
+    console.log('Error al obtener servicios del prestador:', error.message);
+    res.status(500).json({ message: 'Error al obtener los servicios del prestador' });
+  }
+});
+
+// Obtener servicios del prestador desactivado
+router.get('/:prestadorId/servicios/desactivado', async (req, res) => {
+  try {
+    const { prestadorId } = req.params;
+    console.log('Obteniendo servicios desactivados para prestador ID:', prestadorId);
+    
+    // Importar el modelo Servicio
+    const Servicio = (await import('../models/Servicio.js')).default;
+    
+    // Verificar que el prestador existe
+    const prestador = await Prestador.findById(prestadorId);
+    if (!prestador) {
+      console.log('Prestador no encontrado:', prestadorId);
+      return res.status(404).json({ message: 'Prestador no encontrado' });
+    }
+    
+    console.log('Prestador encontrado:', prestador._id);
+    
+    // Obtener los servicios del prestador
+    const servicios = await Servicio.find({ 
+      prestadorId: prestadorId,
+      activo: false
+    });
+    
+    console.log(`Se encontraron ${servicios.length} servicios desactivados para el prestador`);
+    res.json(servicios);
+  } catch (error) {
+    console.log('Error al obtener servicios del prestador:', error.message);
+    res.status(500).json({ message: 'Error al obtener los servicios del prestador' });
+  }
+});
+
+// Obtener todos los servicios del prestador (activos e inactivos)
+router.get('/:prestadorId/servicios', async (req, res) => {
+  try {
+    const { prestadorId } = req.params;
+    console.log('Obteniendo todos los servicios para prestador ID:', prestadorId);
+    
+    // Importar el modelo Servicio
+    const Servicio = (await import('../models/Servicio.js')).default;
+    
+    // Verificar que el prestador existe
+    const prestador = await Prestador.findById(prestadorId);
+    if (!prestador) {
+      console.log('Prestador no encontrado:', prestadorId);
+      return res.status(404).json({ message: 'Prestador no encontrado' });
+    }
+    
+    console.log('Prestador encontrado:', prestador._id);
+    
+    // Obtener todos los servicios del prestador sin filtrar por estado
+    const servicios = await Servicio.find({ 
+      prestadorId: prestadorId
+    });
+    
+    console.log(`Se encontraron ${servicios.length} servicios en total para el prestador`);
     res.json(servicios);
   } catch (error) {
     console.log('Error al obtener servicios del prestador:', error.message);
@@ -826,7 +889,7 @@ router.put('/:prestadorId/servicios/:servicioId', protectRoute, async (req, res)
   }
 });
 
-// Eliminar servicio del prestador (desactivar)
+// Eliminar servicio del prestador 
 router.delete('/:prestadorId/servicios/:servicioId', protectRoute, async (req, res) => {
   try {
     const { prestadorId, servicioId } = req.params;
@@ -848,9 +911,8 @@ router.delete('/:prestadorId/servicios/:servicioId', protectRoute, async (req, r
       return res.status(404).json({ message: 'Servicio no encontrado' });
     }
     
-    // En lugar de eliminar, desactivamos el servicio
-    servicio.activo = false;
-    await servicio.save();
+    // eliminar el servicio
+    await servicio.deleteOne();
     
     res.json({ message: 'Servicio eliminado correctamente' });
   } catch (error) {
